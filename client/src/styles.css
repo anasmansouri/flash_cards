@@ -1,0 +1,8 @@
+body { font-family: Arial, sans-serif; margin: 0; background: #f8fafc; }
+.container { max-width: 900px; margin: 0 auto; padding: 16px; }
+nav { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+nav a { text-decoration: none; color: #2563eb; }
+.card { background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+input, select, button { display: block; margin: 8px 0; padding: 8px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.item { display: flex; gap: 8px; align-items: center; border-top: 1px solid #eee; padding: 8px 0; }
