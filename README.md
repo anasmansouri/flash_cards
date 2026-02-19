@@ -62,3 +62,31 @@ npm run dev
 - When adding a word, client can choose `groupMode`: `default`, `existing`, or `new`.
 - Existing groups are fetched from `GET /api/groups`.
 - Review session supports group filtering via `GET /api/session/next?group=All|<groupName>`.
+
+## What to implement next (recommended roadmap)
+
+1. **Library group filter + sorting**
+   - Add a group dropdown in Library (like Review) so users can browse cards by group.
+   - Add sort options (`newest`, `oldest`, `due first`, `status`).
+
+2. **Status clarity in Library**
+   - Add a small status legend/help text for `ready`, `generating`, and `failed`.
+   - `ready` means the generated content is complete and the card can appear in review sessions when due.
+
+3. **Persistent database (Postgres)**
+   - Replace in-memory stores with Postgres using the schema in `db/schema.sql`.
+   - Add migrations and startup checks.
+
+4. **Background generation jobs**
+   - Move generation/retry work to a background worker queue.
+   - Add retry backoff and better failure diagnostics in `quality_flags`.
+
+5. **Auth hardening**
+   - Password hashing, refresh tokens/session expiry, and basic rate limits for auth + add-card endpoints.
+
+6. **Review analytics**
+   - Add a dedicated history endpoint and charts for 7/30-day known vs unknown trends.
+   - Add per-group performance insights.
+
+7. **Polish + accessibility**
+   - Empty states, loading skeletons, better form validation messages, keyboard navigation, and contrast checks.
