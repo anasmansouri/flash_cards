@@ -208,7 +208,7 @@ function AddWord() {
   const [msg, setMsg] = useState('');
   const add = async () => {
     const card = await request('/cards', { method: 'POST', body: JSON.stringify({ text }) });
-    setMsg(`Card ${card.cardId} is ${card.status}`);
+    setMsg('Card is created successfully.');
   };
 
   return (
