@@ -390,13 +390,39 @@ function Library() {
 }
 
 function Stats() {
-  const [stats, setStats] = useState({});
+  const [stats, setStats] = useState({ totalCards: 0, reviewsToday: 0, known: 0, unknown: 0, dueToday: 0 });
   useEffect(() => { request('/stats').then(setStats); }, []);
+
+  const totalReviewed = (stats.known || 0) + (stats.unknown || 0);
+  const knownRate = totalReviewed ? Math.round(((stats.known || 0) / totalReviewed) * 100) : 0;
+
   return (
     <Layout>
       <Surface>
         <TitleBlock eyebrow="Progress" title="Insight board" subtitle="Live metrics from your current account." />
-        <pre className="stats-box">{JSON.stringify(stats, null, 2)}</pre>
+
+        <div className="stats-grid">
+          <div className="stats-tile">
+            <p>Total cards</p>
+            <h3>{stats.totalCards || 0}</h3>
+            <small>Words in your library</small>
+          </div>
+          <div className="stats-tile">
+            <p>Due today</p>
+            <h3>{stats.dueToday || 0}</h3>
+            <small>Cards waiting for review</small>
+          </div>
+          <div className="stats-tile">
+            <p>Reviews today</p>
+            <h3>{stats.reviewsToday || 0}</h3>
+            <small>Completed attempts</small>
+          </div>
+          <div className="stats-tile">
+            <p>Known rate</p>
+            <h3>{knownRate}%</h3>
+            <small>{stats.known || 0} known / {stats.unknown || 0} unknown</small>
+          </div>
+        </div>
       </Surface>
     </Layout>
   );
