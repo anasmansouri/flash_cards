@@ -242,7 +242,7 @@ function Review() {
   return (
     <Layout>
       <Surface className="review-card">
-        <TitleBlock eyebrow="Session" title="Recall challenge" subtitle="Word first. Meaning only after Unknown." />
+        <TitleBlock eyebrow="Session" title="Recall challenge" />
         {!card.cardId ? (
           <p className="empty">No due cards. Great work 🎉</p>
         ) : (
