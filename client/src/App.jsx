@@ -226,7 +226,14 @@ function AddWord() {
     if (groupMode === 'new') payload.groupName = newGroupName;
 
     const card = await request('/cards', { method: 'POST', body: JSON.stringify(payload) });
-    setMsg(`Card is created in ${card.groupName || 'Default'} group.`);
+    const createdGroup = card.groupName || 'Default';
+
+    setGroups((prev) => prev.includes(createdGroup) ? prev : [...prev, createdGroup]);
+    setSelectedGroup(createdGroup);
+    setGroupMode('existing');
+    setText('');
+    setNewGroupName('');
+    setMsg(`Card is created in ${createdGroup} group.`);
   };
 
   return (
