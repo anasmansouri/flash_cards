@@ -176,7 +176,7 @@ function ProfileForm({ onboarding = false }) {
         </div>
 
         {!valid && <p className="warn">Known and target language must be different.</p>}
-        <button className="btn primary" disabled={!valid} onClick={save}>Save profile</button>
+        <button className="btn primary profile-save-btn" disabled={!valid} onClick={save}>Save profile</button>
       </Surface>
     </Layout>
   );

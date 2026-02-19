@@ -201,6 +201,10 @@ input:focus, select:focus {
 
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 
+.profile-save-btn {
+  margin-top: 18px;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
