@@ -205,6 +205,10 @@ input:focus, select:focus {
   margin-top: 18px;
 }
 
+.generate-card-btn {
+  margin-top: 18px;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

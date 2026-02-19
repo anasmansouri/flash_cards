@@ -216,7 +216,7 @@ function AddWord() {
       <Surface>
         <TitleBlock eyebrow="Creation" title="Capture vocabulary instantly" subtitle="Add one word or phrase, then generate content." />
         <input maxLength={80} value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. aufgeben" />
-        <button className="btn primary" onClick={add}>Generate card</button>
+        <button className="btn primary generate-card-btn" onClick={add}>Generate card</button>
         {msg && <p className="help">{msg}</p>}
       </Surface>
     </Layout>
