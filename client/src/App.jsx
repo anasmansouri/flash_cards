@@ -363,6 +363,11 @@ function Library() {
           </select>
           <button className="btn" onClick={load}>Apply</button>
         </div>
+        <p className="status-help">
+          <strong>Status guide:</strong> <span className="badge ready">ready</span> content is generated and reviewable when due,
+          {' '}<span className="badge generating">generating</span> content is still being prepared,
+          {' '}<span className="badge failed">failed</span> generation failed (use Retry).
+        </p>
 
         <div className="list">
           {cards.map((c) => (

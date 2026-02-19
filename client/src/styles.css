@@ -271,6 +271,17 @@ input:focus, select:focus {
   margin-top: 14px;
 }
 
+.status-help {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.status-help .badge {
+  margin: 0 2px;
+}
+
 .list { margin-top: 14px; display: grid; gap: 10px; }
 
 .list-item {
