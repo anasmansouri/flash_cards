@@ -180,6 +180,12 @@ input:focus, select:focus {
   border-color: #c7d2fe;
 }
 
+.auth-caption {
+  margin: 10px 2px 14px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
 .auth-wrap {
   position: relative;
   z-index: 1;

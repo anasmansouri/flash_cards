@@ -114,15 +114,21 @@ function AuthPage() {
           </>
         )}
 
-        <button className="btn primary" onClick={submit}>
-          {mode === 'signup' ? 'Create account' : mode === 'login' ? 'Login now' : 'Send reset link'}
-        </button>
-
-        <div className="mode-switch">
-          <button className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>Login</button>
-          <button className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>Sign up</button>
-          <button className={mode === 'forgot' ? 'active' : ''} onClick={() => setMode('forgot')}>Forgot</button>
+        <div className="mode-switch" role="tablist" aria-label="Authentication mode">
+          <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>I have an account</button>
+          <button type="button" className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>Create account</button>
+          <button type="button" className={mode === 'forgot' ? 'active' : ''} onClick={() => setMode('forgot')}>Reset password</button>
         </div>
+
+        <p className="auth-caption">
+          {mode === 'signup' && 'New here? Create your account and start learning.'}
+          {mode === 'login' && 'Welcome back — continue your recall streak.'}
+          {mode === 'forgot' && 'We will send reset instructions if your email exists.'}
+        </p>
+
+        <button className="btn primary" onClick={submit}>
+          Continue
+        </button>
 
         {message && <p className="help">{message}</p>}
       </Surface>
