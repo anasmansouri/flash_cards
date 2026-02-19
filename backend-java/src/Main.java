@@ -17,10 +17,11 @@ import java.util.concurrent.Executors;
 public class Main {
     static final Set<String> LANGUAGES = Set.of("en", "fr", "de", "it", "es");
     static final Set<String> LEVELS = Set.of("A1", "A2", "B1", "B2", "C1");
+    static final String DEFAULT_GROUP = "Default";
 
     static class User { String id, email, password, createdAt; }
     static class Profile { String userId, knownLanguage, targetLanguage, level; }
-    static class Card { String id, userId, targetLanguage, text, status, createdAt; }
+    static class Card { String id, userId, targetLanguage, text, status, createdAt, groupName; }
     static class Content { String cardId, knownLanguage, level, meaningTarget, meaningKnown, sentenceTarget, sentenceKnown, createdAt; }
     static class Review { String userId, cardId, result, reviewedAt; }
     static class Srs { String userId, cardId, dueAt; int intervalDays; String updatedAt; }
@@ -58,6 +59,7 @@ public class Main {
             if (path.equals("/api/profile") && method.equals("GET")) { getProfile(ex, userId); return; }
             if (path.equals("/api/profile") && method.equals("PATCH")) { patchProfile(ex, userId); return; }
 
+            if (path.equals("/api/groups") && method.equals("GET")) { groups(ex, userId); return; }
             if (path.equals("/api/cards") && method.equals("POST")) { createCard(ex, userId); return; }
             if (path.equals("/api/cards") && method.equals("GET")) { listCards(ex, userId); return; }
             if (path.equals("/api/session/next") && method.equals("GET")) { sessionNext(ex, userId); return; }
@@ -106,27 +108,74 @@ public class Main {
         String known=b.get("knownLanguage"), target=b.get("targetLanguage"), level=b.get("level");
         if (!LANGUAGES.contains(known) || !LANGUAGES.contains(target) || !LEVELS.contains(level)) { send(ex,400,"{\"error\":\"INVALID_INPUT\"}"); return; }
         if (known.equals(target)) { send(ex,400,"{\"error\":\"LANGUAGE_PAIR_INVALID\",\"message\":\"Target language must differ from known language.\"}"); return; }
-        Profile p=profile(userId); if (p==null){ p=new Profile(); p.userId=userId; profiles.add(p);} 
+        Profile p=profile(userId); if (p==null){ p=new Profile(); p.userId=userId; profiles.add(p); }
         p.knownLanguage=known; p.targetLanguage=target; p.level=level;
         send(ex,200,String.format("{\"knownLanguage\":\"%s\",\"targetLanguage\":\"%s\",\"level\":\"%s\"}", known,target,level));
     }
 
+    static void groups(HttpExchange ex, String userId) throws IOException {
+        LinkedHashSet<String> groupSet = new LinkedHashSet<>();
+        groupSet.add(DEFAULT_GROUP);
+        for (Card c : cards) if (c.userId.equals(userId) && c.groupName != null && !c.groupName.isBlank()) groupSet.add(c.groupName);
+
+        StringBuilder arr = new StringBuilder();
+        for (String g : groupSet) {
+            if (arr.length() > 0) arr.append(',');
+            arr.append("\"").append(esc(g)).append("\"");
+        }
+        send(ex, 200, "{\"groups\":[" + arr + "]}");
+    }
+
     static void createCard(HttpExchange ex, String userId) throws IOException {
+        String body = readBody(ex);
+        Map<String,String> b = parseJson(body);
+        String text = b.getOrDefault("text","").trim();
+        if (text.isEmpty() || text.length()>80){ send(ex,400,"{\"error\":\"INVALID_TEXT\"}"); return; }
+
         Profile p=profile(userId); if (p==null){ send(ex,400,"{\"error\":\"PROFILE_REQUIRED\"}"); return; }
-        String text = parseJson(readBody(ex)).getOrDefault("text","").trim();
-        if (text.isEmpty()||text.length()>80){ send(ex,400,"{\"error\":\"INVALID_TEXT\"}"); return; }
         if (dailyCount(userId)>=10){ send(ex,429,"{\"error\":\"DAILY_LIMIT_REACHED\",\"message\":\"Daily word generation limit reached.\"}"); return; }
 
-        Card c=new Card(); c.id=uuid(); c.userId=userId; c.targetLanguage=p.targetLanguage; c.text=text; c.status="generating"; c.createdAt=now(); cards.add(c);
+        String groupMode = b.getOrDefault("groupMode", "default");
+        String groupName = resolveGroup(userId, groupMode, b.get("groupName"));
+        if (groupName == null) {
+            send(ex, 400, "{\"error\":\"GROUP_INVALID\",\"message\":\"Group selection is invalid.\"}");
+            return;
+        }
+
+        Card c=new Card();
+        c.id=uuid(); c.userId=userId; c.targetLanguage=p.targetLanguage; c.text=text; c.status="generating"; c.createdAt=now(); c.groupName=groupName;
+        cards.add(c);
+
         Srs s=new Srs(); s.userId=userId; s.cardId=c.id; s.intervalDays=1; s.dueAt=now(); s.updatedAt=now(); srsStates.add(s);
         generate(c,p);
-        send(ex,200,"{\"cardId\":\""+c.id+"\",\"status\":\""+c.status+"\"}");
+        send(ex,200,"{\"cardId\":\""+c.id+"\",\"status\":\""+c.status+"\",\"groupName\":\""+esc(groupName)+"\"}");
+    }
+
+    static String resolveGroup(String userId, String groupMode, String incomingName) {
+        if (groupMode == null || groupMode.equals("default")) return DEFAULT_GROUP;
+        if (groupMode.equals("new")) {
+            if (incomingName == null) return null;
+            String n = incomingName.trim();
+            if (n.isEmpty() || n.length() > 50) return null;
+            return n;
+        }
+        if (groupMode.equals("existing")) {
+            if (incomingName == null) return null;
+            String n = incomingName.trim();
+            if (n.isEmpty()) return null;
+            for (Card c : cards) if (c.userId.equals(userId) && c.groupName.equalsIgnoreCase(n)) return c.groupName;
+            if (DEFAULT_GROUP.equalsIgnoreCase(n)) return DEFAULT_GROUP;
+            return null;
+        }
+        return null;
     }
 
     static void listCards(HttpExchange ex, String userId) throws IOException {
         Map<String,String> q=query(ex.getRequestURI());
-        String query=q.getOrDefault("query","").toLowerCase(); String status=q.getOrDefault("status","");
+        String query=q.getOrDefault("query","").toLowerCase();
+        String status=q.getOrDefault("status","");
         int page=toInt(q.get("page"),1), pageSize=toInt(q.get("pageSize"),20);
+
         List<Card> filtered=new ArrayList<>();
         for(Card c:cards){
             if(!c.userId.equals(userId)) continue;
@@ -134,13 +183,14 @@ public class Main {
             if(!status.isEmpty() && !c.status.equals(status)) continue;
             filtered.add(c);
         }
+
         int total=filtered.size();
         int start=Math.max(0,(page-1)*pageSize), end=Math.min(total,start+pageSize);
         StringBuilder items=new StringBuilder();
         for(int i=start;i<end;i++){
             Card c=filtered.get(i);
             if(items.length()>0) items.append(',');
-            items.append(String.format("{\"cardId\":\"%s\",\"text\":\"%s\",\"status\":\"%s\",\"createdAt\":\"%s\"}", c.id,esc(c.text),c.status,c.createdAt));
+            items.append(String.format("{\"cardId\":\"%s\",\"text\":\"%s\",\"status\":\"%s\",\"groupName\":\"%s\",\"createdAt\":\"%s\"}", c.id,esc(c.text),c.status,esc(c.groupName),c.createdAt));
         }
         send(ex,200,String.format("{\"items\":[%s],\"page\":%d,\"pageSize\":%d,\"total\":%d}",items,page,pageSize,total));
     }
@@ -161,6 +211,8 @@ public class Main {
 
     static void sessionNext(HttpExchange ex, String userId) throws IOException {
         Profile p=profile(userId); if(p==null){ send(ex,400,"{\"error\":\"PROFILE_REQUIRED\"}"); return; }
+        String selectedGroup = query(ex.getRequestURI()).getOrDefault("group", "All");
+
         Instant now=Instant.now();
         Card found=null; Instant oldest=null;
         for(Srs s:srsStates){
@@ -169,6 +221,7 @@ public class Main {
             if(due.isAfter(now)) continue;
             Card c=card(userId,s.cardId);
             if(c==null || !"ready".equals(c.status) || !c.targetLanguage.equals(p.targetLanguage)) continue;
+            if (!"All".equalsIgnoreCase(selectedGroup) && !c.groupName.equalsIgnoreCase(selectedGroup)) continue;
             if(oldest==null || due.isBefore(oldest)){ oldest=due; found=c; }
         }
         if(found==null){ send(ex,200,"{\"cardId\":null,\"text\":null}"); return; }

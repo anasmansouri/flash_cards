@@ -18,6 +18,7 @@ CREATE TABLE cards (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   target_language TEXT NOT NULL,
   text TEXT NOT NULL,
+  group_name TEXT NOT NULL DEFAULT 'Default',
   status TEXT NOT NULL CHECK (status IN ('generating', 'ready', 'failed')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

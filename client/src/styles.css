@@ -312,3 +312,38 @@ input:focus, select:focus {
   .cta-row { flex-direction: column; align-items: stretch; }
   .btn { width: 100%; }
 }
+
+
+.row.left {
+  justify-content: flex-start;
+}
+
+.group-box {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f8faff;
+}
+
+.group-box .row label {
+  font-weight: 600;
+  margin: 0;
+}
+
+.group-box input[type="radio"] {
+  width: auto;
+  margin-right: 6px;
+}
+
+.review-filter {
+  margin: 8px auto 12px;
+  max-width: 320px;
+  text-align: left;
+}
+
+.item-meta {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}

@@ -48,9 +48,17 @@ npm run dev
 - `POST /api/cards/{id}/known`
 - `POST /api/cards/{id}/unknown`
 - `GET /api/stats`
+- `GET /api/groups`
 
 ## Notes
 
 - Backend storage is in-memory for v1 scaffold.
 - `db/schema.sql` still contains the target Postgres schema design.
 - Card generation remains server-side and enforces strict no-reveal flow (`/session/next` returns only `cardId` + `text`).
+
+
+## Grouping support
+
+- When adding a word, client can choose `groupMode`: `default`, `existing`, or `new`.
+- Existing groups are fetched from `GET /api/groups`.
+- Review session supports group filtering via `GET /api/session/next?group=All|<groupName>`.

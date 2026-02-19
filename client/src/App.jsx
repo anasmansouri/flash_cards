@@ -206,9 +206,27 @@ function Dashboard() {
 function AddWord() {
   const [text, setText] = useState('');
   const [msg, setMsg] = useState('');
+  const [groups, setGroups] = useState(['Default']);
+  const [groupMode, setGroupMode] = useState('default');
+  const [selectedGroup, setSelectedGroup] = useState('Default');
+  const [newGroupName, setNewGroupName] = useState('');
+
+  useEffect(() => {
+    request('/groups').then((data) => {
+      if (Array.isArray(data.groups) && data.groups.length) {
+        setGroups(data.groups);
+        setSelectedGroup(data.groups[0]);
+      }
+    }).catch(() => {});
+  }, []);
+
   const add = async () => {
-    const card = await request('/cards', { method: 'POST', body: JSON.stringify({ text }) });
-    setMsg('Card is created successfully.');
+    const payload = { text, groupMode };
+    if (groupMode === 'existing') payload.groupName = selectedGroup;
+    if (groupMode === 'new') payload.groupName = newGroupName;
+
+    const card = await request('/cards', { method: 'POST', body: JSON.stringify(payload) });
+    setMsg(`Card is created in ${card.groupName || 'Default'} group.`);
   };
 
   return (
@@ -216,6 +234,26 @@ function AddWord() {
       <Surface>
         <TitleBlock eyebrow="Creation" title="Capture vocabulary instantly" subtitle="Add one word or phrase, then generate content." />
         <input maxLength={80} value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. aufgeben" />
+
+        <div className="group-box">
+          <label>Group</label>
+          <div className="row left">
+            <label><input type="radio" name="groupMode" checked={groupMode === 'default'} onChange={() => setGroupMode('default')} /> Default group</label>
+            <label><input type="radio" name="groupMode" checked={groupMode === 'existing'} onChange={() => setGroupMode('existing')} /> Existing group</label>
+            <label><input type="radio" name="groupMode" checked={groupMode === 'new'} onChange={() => setGroupMode('new')} /> New group</label>
+          </div>
+
+          {groupMode === 'existing' && (
+            <select value={selectedGroup} onChange={(e) => setSelectedGroup(e.target.value)}>
+              {groups.map((g) => <option key={g}>{g}</option>)}
+            </select>
+          )}
+
+          {groupMode === 'new' && (
+            <input value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} placeholder="Enter new group name" maxLength={50} />
+          )}
+        </div>
+
         <button className="btn primary generate-card-btn" onClick={add}>Generate card</button>
         {msg && <p className="help">{msg}</p>}
       </Surface>
@@ -226,13 +264,26 @@ function AddWord() {
 function Review() {
   const [card, setCard] = useState({ cardId: null, text: null });
   const [reveal, setReveal] = useState(null);
-  const next = async () => { setReveal(null); setCard(await request('/session/next')); };
+  const [groups, setGroups] = useState(['All']);
+  const [selectedGroup, setSelectedGroup] = useState('All');
 
-  useEffect(() => { next(); }, []);
+  const next = async (group = selectedGroup) => {
+    setReveal(null);
+    setCard(await request(`/session/next?group=${encodeURIComponent(group)}`));
+  };
+
+  useEffect(() => {
+    request('/groups').then((data) => {
+      const list = ['All', ...(Array.isArray(data.groups) ? data.groups : [])];
+      setGroups([...new Set(list)]);
+    }).catch(() => setGroups(['All']));
+  }, []);
+
+  useEffect(() => { next(selectedGroup); }, [selectedGroup]);
 
   const known = async () => {
     await request(`/cards/${card.cardId}/known`, { method: 'POST' });
-    next();
+    next(selectedGroup);
   };
 
   const unknown = async () => {
@@ -243,6 +294,13 @@ function Review() {
     <Layout>
       <Surface className="review-card">
         <TitleBlock eyebrow="Session" title="Recall challenge" />
+        <div className="review-filter">
+          <label>Review group</label>
+          <select value={selectedGroup} onChange={(e) => setSelectedGroup(e.target.value)}>
+            {groups.map((g) => <option key={g}>{g}</option>)}
+          </select>
+        </div>
+
         {!card.cardId ? (
           <p className="empty">No due cards. Great work 🎉</p>
         ) : (
@@ -260,7 +318,7 @@ function Review() {
                 <p><strong>Meaning (known):</strong> {reveal.meaningKnown}</p>
                 <p><strong>Sentence (target):</strong> {reveal.sentenceTarget}</p>
                 <p><strong>Sentence (known):</strong> {reveal.sentenceKnown}</p>
-                <button className="btn primary" onClick={next}>Next card</button>
+                <button className="btn primary" onClick={() => next(selectedGroup)}>Next card</button>
               </div>
             )}
           </>
@@ -304,6 +362,7 @@ function Library() {
             <div key={c.cardId} className="list-item">
               <div>
                 <strong>{c.text}</strong>
+                <p className="item-meta">Group: {c.groupName || "Default"}</p>
                 <p className={`badge ${c.status}`}>{c.status}</p>
               </div>
               <div className="row">
