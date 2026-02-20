@@ -392,8 +392,14 @@ function Library() {
 
   useEffect(() => {
     loadGroups().catch(() => setGroups(['All']));
-    load();
   }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      load();
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [query, selectedGroup]);
 
   const del = async (id) => {
     await request(`/cards/${id}`, { method: 'DELETE' });
@@ -429,7 +435,6 @@ function Library() {
           <select value={selectedGroup} onChange={(e) => setSelectedGroup(e.target.value)}>
             {groups.map((g) => <option key={g}>{g}</option>)}
           </select>
-          <button className="btn" onClick={load}>Apply</button>
         </div>
 
         {selectedGroup !== 'All' && (

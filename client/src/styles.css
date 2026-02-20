@@ -273,7 +273,7 @@ input:focus, select:focus {
 }
 
 .filter-row-library {
-  grid-template-columns: 1fr 180px 180px;
+  grid-template-columns: 1fr 220px;
 }
 
 .group-actions {
