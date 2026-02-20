@@ -7,6 +7,9 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -18,6 +21,9 @@ public class Main {
     static final Set<String> LANGUAGES = Set.of("en", "fr", "de", "it", "es");
     static final Set<String> LEVELS = Set.of("A1", "A2", "B1", "B2", "C1");
     static final String DEFAULT_GROUP = "Default";
+    static final String OPENAI_API_KEY = System.getenv("OPENAI_API_KEY");
+    static final String OPENAI_MODEL = System.getenv().getOrDefault("OPENAI_MODEL", "gpt-4o-mini");
+    static final HttpClient HTTP = HttpClient.newHttpClient();
 
     static class User { String id, email, password, createdAt; }
     static class Profile { String userId, knownLanguage, targetLanguage, level; }
@@ -371,14 +377,110 @@ public class Main {
 
     static void generate(Card c, Profile p){
         for(Content x:contents) if(x.cardId.equals(c.id)&&x.knownLanguage.equals(p.knownLanguage)&&x.level.equals(p.level)){ c.status="ready"; return; }
-        Content cc=new Content();
-        cc.cardId=c.id; cc.knownLanguage=p.knownLanguage; cc.level=p.level;
-        cc.meaningTarget=c.text+" ("+c.targetLanguage+") short meaning";
-        cc.meaningKnown=c.text+" ("+p.knownLanguage+") short meaning";
-        cc.sentenceTarget="I use "+c.text+" in class every day";
-        cc.sentenceKnown="Translation: I use "+c.text+" in class every day";
-        cc.createdAt=now();
-        contents.add(cc); c.status="ready";
+
+        Content cc = null;
+        if (OPENAI_API_KEY != null && !OPENAI_API_KEY.isBlank()) {
+            cc = generateWithOpenAI(c, p);
+        }
+
+        if (cc == null) {
+            cc = new Content();
+            cc.cardId=c.id; cc.knownLanguage=p.knownLanguage; cc.level=p.level;
+            cc.meaningTarget=c.text+" ("+c.targetLanguage+") short meaning";
+            cc.meaningKnown=c.text+" ("+p.knownLanguage+") short meaning";
+            cc.sentenceTarget="I use "+c.text+" in class every day";
+            cc.sentenceKnown="Translation: I use "+c.text+" in class every day";
+            cc.createdAt=now();
+        }
+
+        contents.add(cc);
+        c.status="ready";
+    }
+
+    static Content generateWithOpenAI(Card c, Profile p) {
+        String prompt = "Generate strict JSON with exactly these keys: meaningTarget, meaningKnown, sentenceTarget, sentenceKnown. " +
+                "Target language=" + c.targetLanguage + ", known language=" + p.knownLanguage + ", level=" + p.level + ". " +
+                "Word/phrase=\"" + c.text + "\". sentenceTarget must naturally include the word/phrase and be exactly one sentence.";
+
+        String payload = "{" +
+                "\"model\":\"" + esc(OPENAI_MODEL) + "\"," +
+                "\"temperature\":0.4," +
+                "\"response_format\":{\"type\":\"json_object\"}," +
+                "\"messages\":[" +
+                "{\"role\":\"system\",\"content\":\"You are a language tutor. Return only valid JSON.\"}," +
+                "{\"role\":\"user\",\"content\":\"" + esc(prompt) + "\"}" +
+                "]}";
+
+        for (int i = 0; i < 3; i++) {
+            try {
+                HttpRequest req = HttpRequest.newBuilder()
+                        .uri(URI.create("https://api.openai.com/v1/chat/completions"))
+                        .header("Authorization", "Bearer " + OPENAI_API_KEY)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(payload))
+                        .build();
+
+                HttpResponse<String> resp = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
+                if (resp.statusCode() < 200 || resp.statusCode() >= 300) continue;
+
+                String contentJson = extractAssistantContent(resp.body());
+                if (contentJson == null || contentJson.isBlank()) continue;
+
+                Map<String, String> parsed = parseJson(contentJson);
+                if (!isValidGeneratedContent(parsed, c.text)) continue;
+
+                Content cc = new Content();
+                cc.cardId = c.id;
+                cc.knownLanguage = p.knownLanguage;
+                cc.level = p.level;
+                cc.meaningTarget = parsed.get("meaningTarget").trim();
+                cc.meaningKnown = parsed.get("meaningKnown").trim();
+                cc.sentenceTarget = parsed.get("sentenceTarget").trim();
+                cc.sentenceKnown = parsed.get("sentenceKnown").trim();
+                cc.createdAt = now();
+                return cc;
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
+    }
+
+    static boolean isValidGeneratedContent(Map<String, String> m, String text) {
+        if (m == null) return false;
+        Set<String> req = Set.of("meaningTarget", "meaningKnown", "sentenceTarget", "sentenceKnown");
+        if (!m.keySet().containsAll(req)) return false;
+        for (String k : req) {
+            String v = m.get(k);
+            if (v == null || v.trim().isEmpty()) return false;
+        }
+        String sentence = m.get("sentenceTarget").trim();
+        if (!sentence.toLowerCase().contains(text.toLowerCase())) return false;
+        return true;
+    }
+
+    static String extractAssistantContent(String responseBody) {
+        String marker = "\"content\":\"";
+        int start = responseBody.indexOf(marker);
+        if (start < 0) return null;
+        int i = start + marker.length();
+        StringBuilder out = new StringBuilder();
+        boolean escape = false;
+        while (i < responseBody.length()) {
+            char ch = responseBody.charAt(i++);
+            if (escape) {
+                if (ch == 'n') out.append('\n');
+                else out.append(ch);
+                escape = false;
+                continue;
+            }
+            if (ch == '\\') {
+                escape = true;
+                continue;
+            }
+            if (ch == '"') break;
+            out.append(ch);
+        }
+        return out.toString().trim();
     }
 
     static void review(String userId, String cardId, String result){

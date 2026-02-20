@@ -11,6 +11,11 @@ React frontend + **Java backend** implementation of strict active-recall languag
 ## Run backend (Java)
 
 ```bash
+# optional: enable real ChatGPT generation
+export OPENAI_API_KEY=your_openai_api_key
+# optional model override (default gpt-4o-mini)
+export OPENAI_MODEL=gpt-4o-mini
+
 javac backend-java/src/Main.java -d backend-java/out
 java -cp backend-java/out Main
 ```
@@ -58,6 +63,7 @@ npm run dev
 - Backend storage is in-memory for v1 scaffold.
 - `db/schema.sql` still contains the target Postgres schema design.
 - Card generation remains server-side and enforces strict no-reveal flow (`/session/next` returns only `cardId` + `text`).
+- If `OPENAI_API_KEY` is set, backend generation uses OpenAI Chat Completions; otherwise it falls back to demo generation content.
 
 
 ## Grouping support
