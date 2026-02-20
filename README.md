@@ -50,6 +50,8 @@ npm run dev
 - `POST /api/cards/{id}/unknown`
 - `GET /api/stats`
 - `GET /api/groups`
+- `DELETE /api/groups/{groupName}/cards`
+- `DELETE /api/groups/{groupName}`
 
 ## Notes
 
@@ -63,6 +65,10 @@ npm run dev
 - When adding a word, client can choose `groupMode`: `default`, `existing`, or `new`.
 - Existing groups are fetched from `GET /api/groups`.
 - Review session supports group filtering via `GET /api/session/next?group=All|<groupName>`.
+- Library can filter by `group` via `GET /api/cards?...&group=All|<groupName>`.
+- Group actions:
+  - `DELETE /api/groups/{groupName}/cards` deletes all cards in that group.
+  - `DELETE /api/groups/{groupName}` deletes the group label by moving its cards to `Default`.
 
 ## What to implement next (recommended roadmap)
 

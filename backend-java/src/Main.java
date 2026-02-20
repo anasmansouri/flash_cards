@@ -60,6 +60,8 @@ public class Main {
             if (path.equals("/api/profile") && method.equals("PATCH")) { patchProfile(ex, userId); return; }
 
             if (path.equals("/api/groups") && method.equals("GET")) { groups(ex, userId); return; }
+            if (path.matches("/api/groups/[^/]+/cards") && method.equals("DELETE")) { deleteGroupCards(ex, userId, urlDecode(path.split("/")[3])); return; }
+            if (path.matches("/api/groups/[^/]+") && method.equals("DELETE")) { deleteGroup(ex, userId, urlDecode(path.split("/")[3])); return; }
             if (path.equals("/api/cards") && method.equals("POST")) { createCard(ex, userId); return; }
             if (path.equals("/api/cards") && method.equals("GET")) { listCards(ex, userId); return; }
             if (path.equals("/api/session/next") && method.equals("GET")) { sessionNext(ex, userId); return; }
@@ -175,6 +177,7 @@ public class Main {
         Map<String,String> q=query(ex.getRequestURI());
         String query=q.getOrDefault("query","").toLowerCase();
         String status=q.getOrDefault("status","");
+        String group=q.getOrDefault("group", "");
         int page=toInt(q.get("page"),1), pageSize=toInt(q.get("pageSize"),20);
 
         List<Card> filtered=new ArrayList<>();
@@ -182,6 +185,7 @@ public class Main {
             if(!c.userId.equals(userId)) continue;
             if(!c.text.toLowerCase().contains(query)) continue;
             if(!status.isEmpty() && !c.status.equals(status)) continue;
+            if(!group.isEmpty() && !"All".equalsIgnoreCase(group) && !c.groupName.equalsIgnoreCase(group)) continue;
             filtered.add(c);
         }
 
@@ -197,10 +201,49 @@ public class Main {
     }
 
     static void deleteCard(HttpExchange ex, String userId, String id) throws IOException {
-        cards.removeIf(c->c.id.equals(id)&&c.userId.equals(userId));
-        contents.removeIf(c->c.cardId.equals(id));
-        srsStates.removeIf(s->s.cardId.equals(id)&&s.userId.equals(userId));
+        removeCardData(userId, id);
         send(ex,200,"{\"ok\":true}");
+    }
+
+    static void deleteGroupCards(HttpExchange ex, String userId, String groupName) throws IOException {
+        if (groupName == null || groupName.isBlank() || "All".equalsIgnoreCase(groupName)) {
+            send(ex, 400, "{\"error\":\"GROUP_INVALID\"}");
+            return;
+        }
+
+        List<String> cardIds = new ArrayList<>();
+        for (Card c : cards) {
+            if (!c.userId.equals(userId)) continue;
+            if (!c.groupName.equalsIgnoreCase(groupName)) continue;
+            cardIds.add(c.id);
+        }
+
+        for (String id : cardIds) removeCardData(userId, id);
+        send(ex,200,String.format("{\"ok\":true,\"deleted\":%d}", cardIds.size()));
+    }
+
+    static void deleteGroup(HttpExchange ex, String userId, String groupName) throws IOException {
+        if (groupName == null || groupName.isBlank() || "All".equalsIgnoreCase(groupName) || DEFAULT_GROUP.equalsIgnoreCase(groupName)) {
+            send(ex, 400, "{\"error\":\"GROUP_INVALID\"}");
+            return;
+        }
+
+        int moved = 0;
+        for (Card c : cards) {
+            if (!c.userId.equals(userId)) continue;
+            if (!c.groupName.equalsIgnoreCase(groupName)) continue;
+            c.groupName = DEFAULT_GROUP;
+            moved++;
+        }
+
+        send(ex,200,String.format("{\"ok\":true,\"movedToDefault\":%d}", moved));
+    }
+
+    static void removeCardData(String userId, String cardId) {
+        cards.removeIf(c -> c.id.equals(cardId) && c.userId.equals(userId));
+        contents.removeIf(c -> c.cardId.equals(cardId));
+        srsStates.removeIf(s -> s.cardId.equals(cardId) && s.userId.equals(userId));
+        reviews.removeIf(r -> r.cardId.equals(cardId) && r.userId.equals(userId));
     }
 
     static void retryCard(HttpExchange ex, String userId, String id) throws IOException {

@@ -376,22 +376,56 @@ function Review() {
 function Library() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
+  const [selectedGroup, setSelectedGroup] = useState('All');
+  const [groups, setGroups] = useState(['All']);
   const [cards, setCards] = useState([]);
-  const load = async () => {
-    const data = await request(`/cards?query=${encodeURIComponent(query)}&status=${status}&page=1&pageSize=20`);
+
+  const loadGroups = async () => {
+    const data = await request('/groups');
+    const list = ['All', ...(Array.isArray(data.groups) ? data.groups : [])];
+    setGroups([...new Set(list)]);
+  };
+
+  const load = async (group = selectedGroup) => {
+    const data = await request(`/cards?query=${encodeURIComponent(query)}&status=${status}&group=${encodeURIComponent(group)}&page=1&pageSize=20`);
     setCards(data.items);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    loadGroups().catch(() => setGroups(['All']));
+    load();
+  }, []);
 
-  const del = async (id) => { await request(`/cards/${id}`, { method: 'DELETE' }); load(); };
+  const del = async (id) => {
+    await request(`/cards/${id}`, { method: 'DELETE' });
+    await load();
+    await loadGroups();
+  };
+
   const retry = async (id) => { await request(`/cards/${id}/retry`, { method: 'POST' }); load(); };
+
+  const deleteAllInGroup = async () => {
+    if (selectedGroup === 'All') return;
+    if (!window.confirm(`Delete all words in group "${selectedGroup}"?`)) return;
+    await request(`/groups/${encodeURIComponent(selectedGroup)}/cards`, { method: 'DELETE' });
+    await load();
+    await loadGroups();
+  };
+
+  const deleteGroup = async () => {
+    if (selectedGroup === 'All' || selectedGroup === 'Default') return;
+    if (!window.confirm(`Delete group "${selectedGroup}"? Words will be moved to Default group.`)) return;
+    await request(`/groups/${encodeURIComponent(selectedGroup)}`, { method: 'DELETE' });
+    setSelectedGroup('All');
+    await load('All');
+    await loadGroups();
+  };
 
   return (
     <Layout>
       <Surface>
         <TitleBlock eyebrow="Collection" title="Word library" subtitle="Search, filter, and manage your card queue." />
-        <div className="filter-row">
+        <div className="filter-row filter-row-library">
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search text" />
           <select value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">All statuses</option>
@@ -399,8 +433,19 @@ function Library() {
             <option>generating</option>
             <option>failed</option>
           </select>
+          <select value={selectedGroup} onChange={(e) => setSelectedGroup(e.target.value)}>
+            {groups.map((g) => <option key={g}>{g}</option>)}
+          </select>
           <button className="btn" onClick={load}>Apply</button>
         </div>
+
+        {selectedGroup !== 'All' && (
+          <div className="group-actions">
+            <button className="btn danger" onClick={deleteAllInGroup}>Delete all words in group</button>
+            {selectedGroup !== 'Default' && <button className="btn ghost" onClick={deleteGroup}>Delete group</button>}
+          </div>
+        )}
+
         <p className="status-help">
           <strong>Status guide:</strong> <span className="badge ready">ready</span> content is generated and reviewable when due,
           {' '}<span className="badge generating">generating</span> content is still being prepared,
