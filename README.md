@@ -45,6 +45,7 @@ npm run dev
 - `DELETE /api/cards/{id}`
 - `POST /api/cards/{id}/retry`
 - `GET /api/session/next`
+- `GET /api/review/summary`
 - `POST /api/cards/{id}/known`
 - `POST /api/cards/{id}/unknown`
 - `GET /api/stats`

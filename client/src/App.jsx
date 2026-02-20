@@ -271,30 +271,45 @@ function AddWord() {
 function Review() {
   const [card, setCard] = useState({ cardId: null, text: null });
   const [reveal, setReveal] = useState(null);
-  const [groups, setGroups] = useState(['All']);
+  const [groups, setGroups] = useState([{ groupName: 'All', totalWords: 0, stillToRevise: 0 }]);
   const [selectedGroup, setSelectedGroup] = useState('All');
+  const [summary, setSummary] = useState({ totalWords: 0, reviewedToday: 0, stillToRevise: 0, estimatedMinutes: 0 });
 
   const next = async (group = selectedGroup) => {
     setReveal(null);
     setCard(await request(`/session/next?group=${encodeURIComponent(group)}`));
   };
 
-  useEffect(() => {
-    request('/groups').then((data) => {
-      const list = ['All', ...(Array.isArray(data.groups) ? data.groups : [])];
-      setGroups([...new Set(list)]);
-    }).catch(() => setGroups(['All']));
-  }, []);
+  const loadSummary = async (group = selectedGroup) => {
+    const data = await request(`/review/summary?group=${encodeURIComponent(group)}`);
+    setSummary({
+      totalWords: data.totalWords || 0,
+      reviewedToday: data.reviewedToday || 0,
+      stillToRevise: data.stillToRevise || 0,
+      estimatedMinutes: data.estimatedMinutes || 0
+    });
+    if (Array.isArray(data.groups)) {
+      setGroups(data.groups);
+    }
+  };
 
-  useEffect(() => { next(selectedGroup); }, [selectedGroup]);
+  useEffect(() => {
+    next(selectedGroup);
+    loadSummary(selectedGroup).catch(() => {
+      setSummary({ totalWords: 0, reviewedToday: 0, stillToRevise: 0, estimatedMinutes: 0 });
+      setGroups([{ groupName: 'All', totalWords: 0, stillToRevise: 0 }]);
+    });
+  }, [selectedGroup]);
 
   const known = async () => {
     await request(`/cards/${card.cardId}/known`, { method: 'POST' });
-    next(selectedGroup);
+    await next(selectedGroup);
+    await loadSummary(selectedGroup);
   };
 
   const unknown = async () => {
     setReveal(await request(`/cards/${card.cardId}/unknown`, { method: 'POST' }));
+    await loadSummary(selectedGroup);
   };
 
   return (
@@ -304,8 +319,31 @@ function Review() {
         <div className="review-filter">
           <label>Review group</label>
           <select value={selectedGroup} onChange={(e) => setSelectedGroup(e.target.value)}>
-            {groups.map((g) => <option key={g}>{g}</option>)}
+            {groups.map((g) => (
+              <option key={g.groupName} value={g.groupName}>
+                {g.groupName} ({g.totalWords})
+              </option>
+            ))}
           </select>
+        </div>
+
+        <div className="review-summary">
+          <div className="review-summary-item">
+            <p>Total words</p>
+            <strong>{summary.totalWords}</strong>
+          </div>
+          <div className="review-summary-item">
+            <p>Revised today</p>
+            <strong>{summary.reviewedToday}</strong>
+          </div>
+          <div className="review-summary-item">
+            <p>Still to revise</p>
+            <strong>{summary.stillToRevise}</strong>
+          </div>
+          <div className="review-summary-item">
+            <p>Est. time</p>
+            <strong>{summary.estimatedMinutes} min</strong>
+          </div>
         </div>
 
         {!card.cardId ? (

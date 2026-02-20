@@ -63,6 +63,7 @@ public class Main {
             if (path.equals("/api/cards") && method.equals("POST")) { createCard(ex, userId); return; }
             if (path.equals("/api/cards") && method.equals("GET")) { listCards(ex, userId); return; }
             if (path.equals("/api/session/next") && method.equals("GET")) { sessionNext(ex, userId); return; }
+            if (path.equals("/api/review/summary") && method.equals("GET")) { reviewSummary(ex, userId); return; }
             if (path.equals("/api/stats") && method.equals("GET")) { stats(ex, userId); return; }
 
             if (path.matches("/api/cards/[^/]+") && method.equals("DELETE")) { deleteCard(ex, userId, path.split("/")[3]); return; }
@@ -241,6 +242,78 @@ public class Main {
         Content cc=null; for(Content x:contents) if(x.cardId.equals(id)&&x.knownLanguage.equals(p.knownLanguage)&&x.level.equals(p.level)) { cc=x; break; }
         if(cc==null){ send(ex,409,"{\"error\":\"CONTENT_NOT_READY\"}"); return; }
         send(ex,200,String.format("{\"meaningTarget\":\"%s\",\"meaningKnown\":\"%s\",\"sentenceTarget\":\"%s\",\"sentenceKnown\":\"%s\"}",esc(cc.meaningTarget),esc(cc.meaningKnown),esc(cc.sentenceTarget),esc(cc.sentenceKnown)));
+    }
+
+
+    static void reviewSummary(HttpExchange ex, String userId) throws IOException {
+        String selectedGroup = query(ex.getRequestURI()).getOrDefault("group", "All");
+        String day = LocalDate.now(ZoneOffset.UTC).toString();
+        Instant now = Instant.now();
+
+        LinkedHashSet<String> groups = new LinkedHashSet<>();
+        groups.add("All");
+        groups.add(DEFAULT_GROUP);
+        for (Card c : cards) {
+            if (c.userId.equals(userId) && c.groupName != null && !c.groupName.isBlank()) groups.add(c.groupName);
+        }
+
+        if (!"All".equalsIgnoreCase(selectedGroup) && !groups.stream().anyMatch(g -> g.equalsIgnoreCase(selectedGroup))) {
+            send(ex, 400, "{\"error\":\"GROUP_INVALID\"}");
+            return;
+        }
+
+        StringBuilder groupsJson = new StringBuilder();
+        for (String groupName : groups) {
+            int totalWords = 0;
+            int stillToRevise = 0;
+
+            for (Card c : cards) {
+                if (!c.userId.equals(userId)) continue;
+                if (!"All".equalsIgnoreCase(groupName) && !c.groupName.equalsIgnoreCase(groupName)) continue;
+                totalWords++;
+            }
+
+            for (Srs s : srsStates) {
+                if (!s.userId.equals(userId)) continue;
+                Card c = card(userId, s.cardId);
+                if (c == null || !"ready".equals(c.status)) continue;
+                if (!"All".equalsIgnoreCase(groupName) && !c.groupName.equalsIgnoreCase(groupName)) continue;
+                if (!Instant.parse(s.dueAt).isAfter(now)) stillToRevise++;
+            }
+
+            if (groupsJson.length() > 0) groupsJson.append(',');
+            groupsJson.append(String.format("{\"groupName\":\"%s\",\"totalWords\":%d,\"stillToRevise\":%d}", esc(groupName), totalWords, stillToRevise));
+        }
+
+        int totalWords = 0, reviewedToday = 0, stillToRevise = 0;
+        for (Card c : cards) {
+            if (!c.userId.equals(userId)) continue;
+            if (!"All".equalsIgnoreCase(selectedGroup) && !c.groupName.equalsIgnoreCase(selectedGroup)) continue;
+            totalWords++;
+        }
+
+        for (Review r : reviews) {
+            if (!r.userId.equals(userId) || !r.reviewedAt.startsWith(day)) continue;
+            Card c = card(userId, r.cardId);
+            if (c == null) continue;
+            if (!"All".equalsIgnoreCase(selectedGroup) && !c.groupName.equalsIgnoreCase(selectedGroup)) continue;
+            reviewedToday++;
+        }
+
+        for (Srs s : srsStates) {
+            if (!s.userId.equals(userId)) continue;
+            Card c = card(userId, s.cardId);
+            if (c == null || !"ready".equals(c.status)) continue;
+            if (!"All".equalsIgnoreCase(selectedGroup) && !c.groupName.equalsIgnoreCase(selectedGroup)) continue;
+            if (!Instant.parse(s.dueAt).isAfter(now)) stillToRevise++;
+        }
+
+        int estimatedMinutes = stillToRevise == 0 ? 0 : Math.max(1, (int) Math.ceil(stillToRevise * 0.5));
+
+        send(ex, 200, String.format(
+                "{\"selectedGroup\":\"%s\",\"totalWords\":%d,\"reviewedToday\":%d,\"stillToRevise\":%d,\"estimatedMinutes\":%d,\"groups\":[%s]}",
+                esc(selectedGroup), totalWords, reviewedToday, stillToRevise, estimatedMinutes, groupsJson
+        ));
     }
 
     static void stats(HttpExchange ex, String userId) throws IOException {
