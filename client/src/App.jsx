@@ -375,7 +375,6 @@ function Review() {
 
 function Library() {
   const [query, setQuery] = useState('');
-  const [status, setStatus] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('All');
   const [groups, setGroups] = useState(['All']);
   const [cards, setCards] = useState([]);
@@ -387,7 +386,7 @@ function Library() {
   };
 
   const load = async (group = selectedGroup) => {
-    const data = await request(`/cards?query=${encodeURIComponent(query)}&status=${status}&group=${encodeURIComponent(group)}&page=1&pageSize=20`);
+    const data = await request(`/cards?query=${encodeURIComponent(query)}&group=${encodeURIComponent(group)}&page=1&pageSize=20`);
     setCards(data.items);
   };
 
@@ -427,12 +426,6 @@ function Library() {
         <TitleBlock eyebrow="Collection" title="Word library" subtitle="Search, filter, and manage your card queue." />
         <div className="filter-row filter-row-library">
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search text" />
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">All statuses</option>
-            <option>ready</option>
-            <option>generating</option>
-            <option>failed</option>
-          </select>
           <select value={selectedGroup} onChange={(e) => setSelectedGroup(e.target.value)}>
             {groups.map((g) => <option key={g}>{g}</option>)}
           </select>
@@ -446,19 +439,12 @@ function Library() {
           </div>
         )}
 
-        <p className="status-help">
-          <strong>Status guide:</strong> <span className="badge ready">ready</span> content is generated and reviewable when due,
-          {' '}<span className="badge generating">generating</span> content is still being prepared,
-          {' '}<span className="badge failed">failed</span> generation failed (use Retry).
-        </p>
-
         <div className="list">
           {cards.map((c) => (
             <div key={c.cardId} className="list-item">
               <div>
                 <strong>{c.text}</strong>
                 <p className="item-meta">Group: {c.groupName || "Default"}</p>
-                <p className={`badge ${c.status}`}>{c.status}</p>
               </div>
               <div className="row">
                 <button className="btn ghost" onClick={() => del(c.cardId)}>Delete</button>

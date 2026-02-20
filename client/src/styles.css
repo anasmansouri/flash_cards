@@ -273,7 +273,7 @@ input:focus, select:focus {
 }
 
 .filter-row-library {
-  grid-template-columns: 1fr 180px 180px 120px;
+  grid-template-columns: 1fr 180px 180px;
 }
 
 .group-actions {
@@ -283,16 +283,6 @@ input:focus, select:focus {
   flex-wrap: wrap;
 }
 
-.status-help {
-  margin: 10px 0 0;
-  font-size: 13px;
-  color: var(--muted);
-  line-height: 1.5;
-}
-
-.status-help .badge {
-  margin: 0 2px;
-}
 
 .list { margin-top: 14px; display: grid; gap: 10px; }
 
@@ -307,10 +297,6 @@ input:focus, select:focus {
   padding: 12px;
 }
 
-.badge { display: inline-block; font-size: 12px; margin: 5px 0 0; padding: 2px 8px; border-radius: 999px; }
-.badge.ready { background: #dcfce7; color: #166534; }
-.badge.generating { background: #e0e7ff; color: #3730a3; }
-.badge.failed { background: #fee2e2; color: #991b1b; }
 
 .stats-box {
   margin-top: 14px;
