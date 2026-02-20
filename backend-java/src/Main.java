@@ -28,7 +28,7 @@ public class Main {
     static class User { String id, email, password, createdAt; }
     static class Profile { String userId, knownLanguage, targetLanguage, level; }
     static class Card { String id, userId, targetLanguage, text, status, createdAt, groupName; }
-    static class Content { String cardId, knownLanguage, level, meaningTarget, meaningKnown, sentenceTarget, sentenceKnown, createdAt; }
+    static class Content { String cardId, knownLanguage, level, meaningTarget, meaningKnown, sentenceTarget, sentenceKnown, source, model, createdAt; }
     static class Review { String userId, cardId, result, reviewedAt; }
     static class Srs { String userId, cardId, dueAt; int intervalDays; String updatedAt; }
 
@@ -78,6 +78,7 @@ public class Main {
             if (path.matches("/api/cards/[^/]+/retry") && method.equals("POST")) { retryCard(ex, userId, path.split("/")[3]); return; }
             if (path.matches("/api/cards/[^/]+/known") && method.equals("POST")) { known(ex, userId, path.split("/")[3]); return; }
             if (path.matches("/api/cards/[^/]+/unknown") && method.equals("POST")) { unknown(ex, userId, path.split("/")[3]); return; }
+            if (path.matches("/api/cards/[^/]+/generation") && method.equals("GET")) { generationStatus(ex, userId, path.split("/")[3]); return; }
 
             send(ex, 404, "{\"error\":\"NOT_FOUND\"}");
         } catch (Exception e) {
@@ -156,8 +157,8 @@ public class Main {
         cards.add(c);
 
         Srs s=new Srs(); s.userId=userId; s.cardId=c.id; s.intervalDays=1; s.dueAt=now(); s.updatedAt=now(); srsStates.add(s);
-        generate(c,p);
-        send(ex,200,"{\"cardId\":\""+c.id+"\",\"status\":\""+c.status+"\",\"groupName\":\""+esc(groupName)+"\"}");
+        Content generated = generate(c,p);
+        send(ex,200,"{\"cardId\":\""+c.id+"\",\"status\":\""+c.status+"\",\"groupName\":\""+esc(groupName)+"\",\"generationSource\":\""+esc(generated.source)+"\",\"generationModel\":\""+esc(generated.model)+"\"}");
     }
 
     static String resolveGroup(String userId, String groupMode, String incomingName) {
@@ -255,8 +256,21 @@ public class Main {
     static void retryCard(HttpExchange ex, String userId, String id) throws IOException {
         Card c=card(userId,id); if(c==null){ send(ex,404,"{\"error\":\"NOT_FOUND\"}"); return; }
         Profile p=profile(userId); if(p==null){ send(ex,400,"{\"error\":\"PROFILE_REQUIRED\"}"); return; }
-        c.status="generating"; generate(c,p);
-        send(ex,200,"{\"status\":\""+c.status+"\"}");
+        c.status="generating"; Content generated = generate(c,p);
+        send(ex,200,"{\"status\":\""+c.status+"\",\"generationSource\":\""+esc(generated.source)+"\",\"generationModel\":\""+esc(generated.model)+"\"}");
+    }
+
+    static void generationStatus(HttpExchange ex, String userId, String cardId) throws IOException {
+        Card c = card(userId, cardId);
+        if (c == null) { send(ex,404,"{\"error\":\"NOT_FOUND\"}"); return; }
+        Profile p = profile(userId);
+        if (p == null) { send(ex,400,"{\"error\":\"PROFILE_REQUIRED\"}"); return; }
+        Content found = null;
+        for (Content x : contents) {
+            if (x.cardId.equals(cardId) && x.knownLanguage.equals(p.knownLanguage) && x.level.equals(p.level)) { found = x; break; }
+        }
+        if (found == null) { send(ex,404,"{\"error\":\"CONTENT_NOT_FOUND\"}"); return; }
+        send(ex,200,String.format("{\"source\":\"%s\",\"model\":\"%s\"}", esc(found.source), esc(found.model)));
     }
 
     static void sessionNext(HttpExchange ex, String userId) throws IOException {
@@ -375,8 +389,8 @@ public class Main {
         send(ex,200,String.format("{\"totalCards\":%d,\"reviewsToday\":%d,\"known\":%d,\"unknown\":%d,\"dueToday\":%d}",total,reviewsToday,known,unknown,dueToday));
     }
 
-    static void generate(Card c, Profile p){
-        for(Content x:contents) if(x.cardId.equals(c.id)&&x.knownLanguage.equals(p.knownLanguage)&&x.level.equals(p.level)){ c.status="ready"; return; }
+    static Content generate(Card c, Profile p){
+        for(Content x:contents) if(x.cardId.equals(c.id)&&x.knownLanguage.equals(p.knownLanguage)&&x.level.equals(p.level)){ c.status="ready"; return x; }
 
         Content cc = null;
         if (OPENAI_API_KEY != null && !OPENAI_API_KEY.isBlank()) {
@@ -390,11 +404,14 @@ public class Main {
             cc.meaningKnown=c.text+" ("+p.knownLanguage+") short meaning";
             cc.sentenceTarget="I use "+c.text+" in class every day";
             cc.sentenceKnown="Translation: I use "+c.text+" in class every day";
+            cc.source="demo";
+            cc.model="demo-fallback";
             cc.createdAt=now();
         }
 
         contents.add(cc);
         c.status="ready";
+        return cc;
     }
 
     static Content generateWithOpenAI(Card c, Profile p) {
@@ -437,6 +454,8 @@ public class Main {
                 cc.meaningKnown = parsed.get("meaningKnown").trim();
                 cc.sentenceTarget = parsed.get("sentenceTarget").trim();
                 cc.sentenceKnown = parsed.get("sentenceKnown").trim();
+                cc.source = "openai";
+                cc.model = OPENAI_MODEL;
                 cc.createdAt = now();
                 return cc;
             } catch (Exception ignored) {

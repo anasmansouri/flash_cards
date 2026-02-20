@@ -48,6 +48,19 @@ java -cp backend-java/out Main
 
 5. If the key is missing/invalid, backend falls back to demo generation content.
 
+### Fast verification command
+
+Run this helper script after setting `OPENAI_API_KEY`:
+
+```bash
+./scripts/test_openai_generation.sh
+```
+
+What you should check in output:
+- `generationSource` should be `openai` in create response, OR
+- `GET /api/cards/{id}/generation` returns `{"source":"openai", ...}`
+- reveal payload should not look like demo fallback (`Translation: I use ... in class every day`).
+
 ## Run frontend
 
 ```bash
