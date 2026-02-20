@@ -458,7 +458,8 @@ public class Main {
 
                 String contentJson = extractAssistantContent(resp.body());
                 if (contentJson == null || contentJson.isBlank()) {
-                    attempt.error = "openai_empty_content";
+                    String body = resp.body() == null ? "" : resp.body();
+                    attempt.error = "openai_empty_content:" + body.substring(0, Math.min(160, body.length()));
                     continue;
                 }
 
@@ -503,14 +504,26 @@ public class Main {
     }
 
     static String extractAssistantContent(String responseBody) {
-        String marker = "\"content\":\"";
-        int start = responseBody.indexOf(marker);
+        if (responseBody == null || responseBody.isBlank()) return null;
+
+        String direct = extractJsonStringValue(responseBody, "\"content\":\"");
+        if (direct != null && !direct.isBlank()) return direct.trim();
+
+        // Some responses serialize content as an array with text parts.
+        String textPart = extractJsonStringValue(responseBody, "\"text\":\"");
+        if (textPart != null && !textPart.isBlank()) return textPart.trim();
+
+        return null;
+    }
+
+    static String extractJsonStringValue(String raw, String marker) {
+        int start = raw.indexOf(marker);
         if (start < 0) return null;
         int i = start + marker.length();
         StringBuilder out = new StringBuilder();
         boolean escape = false;
-        while (i < responseBody.length()) {
-            char ch = responseBody.charAt(i++);
+        while (i < raw.length()) {
+            char ch = raw.charAt(i++);
             if (escape) {
                 if (ch == 'n') out.append('\n');
                 else out.append(ch);
