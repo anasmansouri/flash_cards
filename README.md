@@ -22,6 +22,32 @@ java -cp backend-java/out Main
 
 API: `http://localhost:3001`
 
+## Use your OpenAI API key (quick setup)
+
+1. Generate your key in OpenAI platform and copy it.
+2. In your terminal (same shell where you run backend):
+
+```bash
+export OPENAI_API_KEY="sk-..."
+# optional: choose model (default is gpt-4o-mini)
+export OPENAI_MODEL="gpt-4o-mini"
+```
+
+3. Start backend:
+
+```bash
+javac backend-java/src/Main.java -d backend-java/out
+java -cp backend-java/out Main
+```
+
+4. Add a word from the app. The backend will call OpenAI for:
+   - `meaningTarget`
+   - `meaningKnown`
+   - `sentenceTarget`
+   - `sentenceKnown`
+
+5. If the key is missing/invalid, backend falls back to demo generation content.
+
 ## Run frontend
 
 ```bash
