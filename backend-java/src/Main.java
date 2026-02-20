@@ -262,6 +262,7 @@ public class Main {
     static void retryCard(HttpExchange ex, String userId, String id) throws IOException {
         Card c=card(userId,id); if(c==null){ send(ex,404,"{\"error\":\"NOT_FOUND\"}"); return; }
         Profile p=profile(userId); if(p==null){ send(ex,400,"{\"error\":\"PROFILE_REQUIRED\"}"); return; }
+        contents.removeIf(x -> x.cardId.equals(id) && x.knownLanguage.equals(p.knownLanguage) && x.level.equals(p.level));
         c.status="generating"; Content generated = generate(c,p);
         send(ex,200,"{\"status\":\""+c.status+"\",\"generationSource\":\""+esc(generated.source)+"\",\"generationModel\":\""+esc(generated.model)+"\",\"generationError\":\""+esc(generated.generationError == null ? "" : generated.generationError)+"\"}");
     }
@@ -506,38 +507,55 @@ public class Main {
     static String extractAssistantContent(String responseBody) {
         if (responseBody == null || responseBody.isBlank()) return null;
 
-        String direct = extractJsonStringValue(responseBody, "\"content\":\"");
+        String direct = extractJsonStringValueByKey(responseBody, "content");
         if (direct != null && !direct.isBlank()) return direct.trim();
 
         // Some responses serialize content as an array with text parts.
-        String textPart = extractJsonStringValue(responseBody, "\"text\":\"");
+        String textPart = extractJsonStringValueByKey(responseBody, "text");
         if (textPart != null && !textPart.isBlank()) return textPart.trim();
 
         return null;
     }
 
-    static String extractJsonStringValue(String raw, String marker) {
-        int start = raw.indexOf(marker);
-        if (start < 0) return null;
-        int i = start + marker.length();
-        StringBuilder out = new StringBuilder();
-        boolean escape = false;
-        while (i < raw.length()) {
-            char ch = raw.charAt(i++);
-            if (escape) {
-                if (ch == 'n') out.append('\n');
-                else out.append(ch);
-                escape = false;
+    static String extractJsonStringValueByKey(String raw, String key) {
+        String token = "\"" + key + "\"";
+        int pos = 0;
+        while (true) {
+            int keyIndex = raw.indexOf(token, pos);
+            if (keyIndex < 0) return null;
+
+            int colon = raw.indexOf(':', keyIndex + token.length());
+            if (colon < 0) return null;
+
+            int i = colon + 1;
+            while (i < raw.length() && Character.isWhitespace(raw.charAt(i))) i++;
+
+            // This helper reads string values only; skip non-string values.
+            if (i >= raw.length() || raw.charAt(i) != '"') {
+                pos = colon + 1;
                 continue;
             }
-            if (ch == '\\') {
-                escape = true;
-                continue;
+
+            i++; // opening quote
+            StringBuilder out = new StringBuilder();
+            boolean escape = false;
+            while (i < raw.length()) {
+                char ch = raw.charAt(i++);
+                if (escape) {
+                    if (ch == 'n') out.append('\n');
+                    else out.append(ch);
+                    escape = false;
+                    continue;
+                }
+                if (ch == '\\') {
+                    escape = true;
+                    continue;
+                }
+                if (ch == '"') break;
+                out.append(ch);
             }
-            if (ch == '"') break;
-            out.append(ch);
+            return out.toString().trim();
         }
-        return out.toString().trim();
     }
 
     static void review(String userId, String cardId, String result){

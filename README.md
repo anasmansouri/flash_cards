@@ -61,6 +61,7 @@ What you should check in output:
 - `generationSource` should be `openai` in create response, OR
 - `GET /api/cards/{id}/generation` returns `{"source":"openai", ...}`
 - If fallback happens, read `error` from generation status and backend log `/tmp/java_api.log`.
+- Cards created before key setup may still use old generated content; use `POST /api/cards/{id}/retry` to force regeneration.
 
 ## Run frontend
 
