@@ -57,9 +57,10 @@ Run this helper script after setting `OPENAI_API_KEY`:
 ```
 
 What you should check in output:
+- Script runs a preflight check against `https://api.openai.com/v1/models` (must return HTTP 200).
 - `generationSource` should be `openai` in create response, OR
 - `GET /api/cards/{id}/generation` returns `{"source":"openai", ...}`
-- reveal payload should not look like demo fallback (`Translation: I use ... in class every day`).
+- If fallback happens, read `error` from generation status and backend log `/tmp/java_api.log`.
 
 ## Run frontend
 

@@ -28,7 +28,7 @@ public class Main {
     static class User { String id, email, password, createdAt; }
     static class Profile { String userId, knownLanguage, targetLanguage, level; }
     static class Card { String id, userId, targetLanguage, text, status, createdAt, groupName; }
-    static class Content { String cardId, knownLanguage, level, meaningTarget, meaningKnown, sentenceTarget, sentenceKnown, source, model, createdAt; }
+    static class Content { String cardId, knownLanguage, level, meaningTarget, meaningKnown, sentenceTarget, sentenceKnown, source, model, generationError, createdAt; }
     static class Review { String userId, cardId, result, reviewedAt; }
     static class Srs { String userId, cardId, dueAt; int intervalDays; String updatedAt; }
 
@@ -39,6 +39,12 @@ public class Main {
     static final List<Review> reviews = new ArrayList<>();
     static final List<Srs> srsStates = new ArrayList<>();
     static final Map<String, String> tokens = new HashMap<>();
+
+    static class GenerationAttempt {
+        Content content;
+        String error = "";
+    }
+
 
     public static void main(String[] args) throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress(3001), 0);
@@ -158,7 +164,7 @@ public class Main {
 
         Srs s=new Srs(); s.userId=userId; s.cardId=c.id; s.intervalDays=1; s.dueAt=now(); s.updatedAt=now(); srsStates.add(s);
         Content generated = generate(c,p);
-        send(ex,200,"{\"cardId\":\""+c.id+"\",\"status\":\""+c.status+"\",\"groupName\":\""+esc(groupName)+"\",\"generationSource\":\""+esc(generated.source)+"\",\"generationModel\":\""+esc(generated.model)+"\"}");
+        send(ex,200,"{\"cardId\":\""+c.id+"\",\"status\":\""+c.status+"\",\"groupName\":\""+esc(groupName)+"\",\"generationSource\":\""+esc(generated.source)+"\",\"generationModel\":\""+esc(generated.model)+"\",\"generationError\":\""+esc(generated.generationError == null ? "" : generated.generationError)+"\"}");
     }
 
     static String resolveGroup(String userId, String groupMode, String incomingName) {
@@ -257,7 +263,7 @@ public class Main {
         Card c=card(userId,id); if(c==null){ send(ex,404,"{\"error\":\"NOT_FOUND\"}"); return; }
         Profile p=profile(userId); if(p==null){ send(ex,400,"{\"error\":\"PROFILE_REQUIRED\"}"); return; }
         c.status="generating"; Content generated = generate(c,p);
-        send(ex,200,"{\"status\":\""+c.status+"\",\"generationSource\":\""+esc(generated.source)+"\",\"generationModel\":\""+esc(generated.model)+"\"}");
+        send(ex,200,"{\"status\":\""+c.status+"\",\"generationSource\":\""+esc(generated.source)+"\",\"generationModel\":\""+esc(generated.model)+"\",\"generationError\":\""+esc(generated.generationError == null ? "" : generated.generationError)+"\"}");
     }
 
     static void generationStatus(HttpExchange ex, String userId, String cardId) throws IOException {
@@ -270,7 +276,7 @@ public class Main {
             if (x.cardId.equals(cardId) && x.knownLanguage.equals(p.knownLanguage) && x.level.equals(p.level)) { found = x; break; }
         }
         if (found == null) { send(ex,404,"{\"error\":\"CONTENT_NOT_FOUND\"}"); return; }
-        send(ex,200,String.format("{\"source\":\"%s\",\"model\":\"%s\"}", esc(found.source), esc(found.model)));
+        send(ex,200,String.format("{\"source\":\"%s\",\"model\":\"%s\",\"error\":\"%s\"}", esc(found.source), esc(found.model), esc(found.generationError == null ? "" : found.generationError)));
     }
 
     static void sessionNext(HttpExchange ex, String userId) throws IOException {
@@ -393,8 +399,11 @@ public class Main {
         for(Content x:contents) if(x.cardId.equals(c.id)&&x.knownLanguage.equals(p.knownLanguage)&&x.level.equals(p.level)){ c.status="ready"; return x; }
 
         Content cc = null;
+        String openAiFailure = "";
         if (OPENAI_API_KEY != null && !OPENAI_API_KEY.isBlank()) {
-            cc = generateWithOpenAI(c, p);
+            GenerationAttempt attempt = generateWithOpenAI(c, p);
+            cc = attempt.content;
+            openAiFailure = attempt.error;
         }
 
         if (cc == null) {
@@ -406,6 +415,7 @@ public class Main {
             cc.sentenceKnown="Translation: I use "+c.text+" in class every day";
             cc.source="demo";
             cc.model="demo-fallback";
+            cc.generationError = openAiFailure;
             cc.createdAt=now();
         }
 
@@ -414,7 +424,7 @@ public class Main {
         return cc;
     }
 
-    static Content generateWithOpenAI(Card c, Profile p) {
+    static GenerationAttempt generateWithOpenAI(Card c, Profile p) {
         String prompt = "Generate strict JSON with exactly these keys: meaningTarget, meaningKnown, sentenceTarget, sentenceKnown. " +
                 "Target language=" + c.targetLanguage + ", known language=" + p.knownLanguage + ", level=" + p.level + ". " +
                 "Word/phrase=\"" + c.text + "\". sentenceTarget must naturally include the word/phrase and be exactly one sentence.";
@@ -428,6 +438,8 @@ public class Main {
                 "{\"role\":\"user\",\"content\":\"" + esc(prompt) + "\"}" +
                 "]}";
 
+        GenerationAttempt attempt = new GenerationAttempt();
+
         for (int i = 0; i < 3; i++) {
             try {
                 HttpRequest req = HttpRequest.newBuilder()
@@ -438,13 +450,23 @@ public class Main {
                         .build();
 
                 HttpResponse<String> resp = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
-                if (resp.statusCode() < 200 || resp.statusCode() >= 300) continue;
+                if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+                    String body = resp.body() == null ? "" : resp.body();
+                    attempt.error = "openai_http_" + resp.statusCode() + ":" + body.substring(0, Math.min(160, body.length()));
+                    continue;
+                }
 
                 String contentJson = extractAssistantContent(resp.body());
-                if (contentJson == null || contentJson.isBlank()) continue;
+                if (contentJson == null || contentJson.isBlank()) {
+                    attempt.error = "openai_empty_content";
+                    continue;
+                }
 
                 Map<String, String> parsed = parseJson(contentJson);
-                if (!isValidGeneratedContent(parsed, c.text)) continue;
+                if (!isValidGeneratedContent(parsed, c.text)) {
+                    attempt.error = "openai_invalid_content_format";
+                    continue;
+                }
 
                 Content cc = new Content();
                 cc.cardId = c.id;
@@ -457,11 +479,14 @@ public class Main {
                 cc.source = "openai";
                 cc.model = OPENAI_MODEL;
                 cc.createdAt = now();
-                return cc;
-            } catch (Exception ignored) {
+                attempt.content = cc;
+                return attempt;
+            } catch (Exception e) {
+                String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                attempt.error = "openai_exception:" + msg.substring(0, Math.min(160, msg.length()));
             }
         }
-        return null;
+        return attempt;
     }
 
     static boolean isValidGeneratedContent(Map<String, String> m, String text) {

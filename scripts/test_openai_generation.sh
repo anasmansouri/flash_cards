@@ -6,6 +6,20 @@ if [[ -z "${OPENAI_API_KEY:-}" ]]; then
   exit 1
 fi
 
+echo "Preflight: checking key with OpenAI /v1/models ..."
+HTTP_CODE=$(curl -s -o /tmp/openai_preflight_body.txt -w "%{http_code}" https://api.openai.com/v1/models \
+  -H "Authorization: Bearer $OPENAI_API_KEY")
+
+if [[ "$HTTP_CODE" != "200" ]]; then
+  echo "OpenAI preflight failed (HTTP $HTTP_CODE)."
+  echo "Response snippet:"
+  head -c 300 /tmp/openai_preflight_body.txt; echo
+  echo "Fix key/project/billing first, then retry."
+  exit 1
+fi
+
+echo "OpenAI key accepted (HTTP 200)."
+
 EMAIL="openai-test-$(date +%s)@example.com"
 
 javac backend-java/src/Main.java -d backend-java/out
@@ -33,9 +47,17 @@ CARD_ID=$(echo "$CREATE" | sed -E 's/.*"cardId":"([^"]+)".*/\1/')
 
 echo "Create response: $CREATE"
 echo "Generation status:"
-curl -s "http://localhost:3001/api/cards/$CARD_ID/generation" -H "Authorization: Bearer $TOKEN"
+STATUS=$(curl -s "http://localhost:3001/api/cards/$CARD_ID/generation" -H "Authorization: Bearer $TOKEN")
+echo "$STATUS"
 echo
 
-echo "Reveal payload (should not be demo sentence if OpenAI works):"
-curl -s -X POST "http://localhost:3001/api/cards/$CARD_ID/unknown" -H "Authorization: Bearer $TOKEN"
+echo "Reveal payload:"
+REVEAL=$(curl -s -X POST "http://localhost:3001/api/cards/$CARD_ID/unknown" -H "Authorization: Bearer $TOKEN")
+echo "$REVEAL"
 echo
+
+if echo "$STATUS" | grep -q '"source":"openai"'; then
+  echo "✅ OpenAI generation is active."
+else
+  echo "⚠️ Backend used demo fallback. See 'error' in generation status above and /tmp/java_api.log"
+fi
