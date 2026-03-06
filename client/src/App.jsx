@@ -205,11 +205,18 @@ function Dashboard() {
 
 function AddWord() {
   const [text, setText] = useState('');
-  const [msg, setMsg] = useState('');
   const [groups, setGroups] = useState(['Default']);
   const [groupMode, setGroupMode] = useState('default');
   const [selectedGroup, setSelectedGroup] = useState('Default');
   const [newGroupName, setNewGroupName] = useState('');
+  const [toast, setToast] = useState(null);
+  const toastTimerRef = React.useRef(null);
+
+  const showToast = (type, message) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ type, message, id: Date.now() });
+    toastTimerRef.current = setTimeout(() => setToast(null), 2600);
+  };
 
   useEffect(() => {
     request('/groups').then((data) => {
@@ -218,22 +225,41 @@ function AddWord() {
         setSelectedGroup(data.groups[0]);
       }
     }).catch(() => {});
+
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
   }, []);
 
   const add = async () => {
-    const payload = { text, groupMode };
+    const cleanText = text.trim();
+    if (!cleanText) {
+      showToast('error', 'Please type a word before generating.');
+      return;
+    }
+
+    const payload = { text: cleanText, groupMode };
     if (groupMode === 'existing') payload.groupName = selectedGroup;
     if (groupMode === 'new') payload.groupName = newGroupName;
 
-    const card = await request('/cards', { method: 'POST', body: JSON.stringify(payload) });
-    const createdGroup = card.groupName || 'Default';
+    try {
+      const card = await request('/cards', { method: 'POST', body: JSON.stringify(payload) });
+      const createdGroup = card.groupName || 'Default';
 
-    setGroups((prev) => prev.includes(createdGroup) ? prev : [...prev, createdGroup]);
-    setSelectedGroup(createdGroup);
-    setGroupMode('existing');
-    setText('');
-    setNewGroupName('');
-    setMsg(`Card is created in ${createdGroup} group.`);
+      setGroups((prev) => prev.includes(createdGroup) ? prev : [...prev, createdGroup]);
+      setSelectedGroup(createdGroup);
+      setGroupMode('existing');
+      setText('');
+      setNewGroupName('');
+      showToast('success', `Added "${cleanText}" to ${createdGroup}.`);
+    } catch (error) {
+      if (error?.error === 'DUPLICATE_CARD') {
+        const duplicateGroup = groupMode === 'existing' ? selectedGroup : groupMode === 'new' ? newGroupName : 'Default';
+        showToast('duplicate', `"${cleanText}" already exists in ${duplicateGroup}.`);
+        return;
+      }
+      showToast('error', `Could not add "${cleanText}". Please try again.`);
+    }
   };
 
   return (
@@ -262,8 +288,14 @@ function AddWord() {
         </div>
 
         <button className="btn primary generate-card-btn" onClick={add}>Generate card</button>
-        {msg && <p className="help">{msg}</p>}
       </Surface>
+
+      {toast && (
+        <div key={toast.id} className={`add-toast ${toast.type}`} role="status" aria-live="polite">
+          <span className="toast-check" aria-hidden="true">{toast.type === 'success' ? '✓' : toast.type === 'duplicate' ? '!' : '⚠'}</span>
+          <p>{toast.message}</p>
+        </div>
+      )}
     </Layout>
   );
 }

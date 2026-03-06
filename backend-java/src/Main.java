@@ -158,6 +158,15 @@ public class Main {
             return;
         }
 
+        for (Card existing : cards) {
+            if (!existing.userId.equals(userId)) continue;
+            if (!existing.groupName.equalsIgnoreCase(groupName)) continue;
+            if (existing.text.equalsIgnoreCase(text)) {
+                send(ex, 409, "{\"error\":\"DUPLICATE_CARD\",\"message\":\"This word already exists in the selected group.\"}");
+                return;
+            }
+        }
+
         Card c=new Card();
         c.id=uuid(); c.userId=userId; c.targetLanguage=p.targetLanguage; c.text=text; c.status="generating"; c.createdAt=now(); c.groupName=groupName;
         cards.add(c);

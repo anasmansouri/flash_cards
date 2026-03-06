@@ -422,3 +422,75 @@ input:focus, select:focus {
   color: var(--muted);
   font-size: 13px;
 }
+
+
+.add-toast {
+  position: fixed;
+  right: 22px;
+  bottom: 20px;
+  z-index: 80;
+  min-width: 280px;
+  max-width: min(460px, calc(100vw - 30px));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: 0 14px 30px #1f293720;
+  border: 1px solid transparent;
+  animation: toast-in 180ms ease-out;
+}
+
+.add-toast p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.toast-check {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.add-toast.success {
+  background: #ecfdf5;
+  border-color: #86efac;
+  color: #14532d;
+}
+
+.add-toast.success .toast-check {
+  background: #16a34a;
+  color: #fff;
+}
+
+.add-toast.duplicate {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #78350f;
+}
+
+.add-toast.duplicate .toast-check {
+  background: #f59e0b;
+  color: #fff;
+}
+
+.add-toast.error {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #7f1d1d;
+}
+
+.add-toast.error .toast-check {
+  background: #dc2626;
+  color: #fff;
+}
+
+@keyframes toast-in {
+  from { transform: translateY(10px) scale(0.98); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
