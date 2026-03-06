@@ -138,12 +138,43 @@ function AuthPage() {
 
 function ProfileForm({ onboarding = false }) {
   const [profile, setProfile] = useState({ knownLanguage: 'en', targetLanguage: 'fr', level: 'A1' });
+  const [loadingProfile, setLoadingProfile] = useState(true);
   const nav = useNavigate();
   const valid = profile.knownLanguage !== profile.targetLanguage;
+
+  useEffect(() => {
+    let active = true;
+    request('/profile')
+      .then((data) => {
+        if (!active) return;
+        setProfile({
+          knownLanguage: data.knownLanguage,
+          targetLanguage: data.targetLanguage,
+          level: data.level
+        });
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoadingProfile(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const save = async () => {
     await request('/profile', { method: 'PATCH', body: JSON.stringify(profile) });
     nav('/dashboard');
   };
+
+  if (loadingProfile) {
+    return (
+      <Layout>
+        <div className="loading">Loading…</div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
