@@ -409,11 +409,13 @@ public class Main {
         for(Content x:contents) if(x.cardId.equals(c.id)&&x.knownLanguage.equals(p.knownLanguage)&&x.level.equals(p.level)){ c.status="ready"; return x; }
 
         Content cc = null;
-        String openAiFailure = "";
+        String openAiFailure;
         if (OPENAI_API_KEY != null && !OPENAI_API_KEY.isBlank()) {
             GenerationAttempt attempt = generateWithOpenAI(c, p);
             cc = attempt.content;
-            openAiFailure = attempt.error;
+            openAiFailure = (attempt.error == null || attempt.error.isBlank()) ? "openai_generation_unknown_error" : attempt.error;
+        } else {
+            openAiFailure = "openai_key_missing";
         }
 
         if (cc == null) {

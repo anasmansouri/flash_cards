@@ -460,10 +460,9 @@ function Review() {
             )}
             {reveal && (
               <div className="reveal-grid">
-                <p><strong>Meaning (target):</strong> {reveal.meaningTarget}</p>
-                <p><strong>Meaning (known):</strong> {reveal.meaningKnown}</p>
-                <p><strong>Sentence (target):</strong> {reveal.sentenceTarget}</p>
-                <p><strong>Sentence (known):</strong> {reveal.sentenceKnown}</p>
+                <p className="reveal-step"><strong>Meaning:</strong> {reveal.meaningKnown}</p>
+                <p className="reveal-step"><strong>Example:</strong> {reveal.sentenceTarget}</p>
+                <p className="reveal-step"><strong>Translation:</strong> {reveal.sentenceKnown}</p>
                 <button className="btn primary" onClick={() => next(selectedGroup)}>Next card</button>
               </div>
             )}

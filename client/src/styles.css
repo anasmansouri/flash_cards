@@ -256,11 +256,20 @@ input:focus, select:focus {
   margin-top: 14px;
   text-align: left;
   display: grid;
-  gap: 10px;
+  gap: 12px;
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 14px;
+}
+
+.reveal-step {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.reveal-step strong {
+  color: #243b66;
 }
 
 .empty { color: var(--muted); }

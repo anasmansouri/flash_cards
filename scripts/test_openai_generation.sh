@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ -z "${OPENAI_API_KEY:-}" && -f .env ]]; then
+  export OPENAI_API_KEY=$(grep -E "^OPENAI_API_KEY=" .env | head -n1 | cut -d= -f2- | tr -d "\r" | sed -e "s/^\"//" -e "s/\"$//")
+fi
+
 if [[ -z "${OPENAI_API_KEY:-}" ]]; then
   echo "Please set OPENAI_API_KEY first."
+  echo "Tip: export OPENAI_API_KEY='sk-...' (or put OPENAI_API_KEY=... in .env)"
   exit 1
 fi
 

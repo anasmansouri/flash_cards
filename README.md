@@ -55,12 +55,14 @@ Run this helper script after setting `OPENAI_API_KEY`:
 ```bash
 ./scripts/test_openai_generation.sh
 ```
+(also supports loading `OPENAI_API_KEY` from `.env` in repo root)
 
 What you should check in output:
 - Script runs a preflight check against `https://api.openai.com/v1/models` (must return HTTP 200).
 - `generationSource` should be `openai` in create response, OR
 - `GET /api/cards/{id}/generation` returns `{"source":"openai", ...}`
 - If fallback happens, read `error` from generation status and backend log `/tmp/java_api.log`.
+  - `openai_key_missing` means backend process did not receive your key (export key **before** starting Java server).
 - Cards created before key setup may still use old generated content; use `POST /api/cards/{id}/retry` to force regeneration.
 
 ## Run frontend
