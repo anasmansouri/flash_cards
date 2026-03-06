@@ -209,8 +209,16 @@ function AddWord() {
   const [groupMode, setGroupMode] = useState('default');
   const [selectedGroup, setSelectedGroup] = useState('Default');
   const [newGroupName, setNewGroupName] = useState('');
+  const [groupPickerOpen, setGroupPickerOpen] = useState(false);
+  const [groupSearch, setGroupSearch] = useState('');
   const [toast, setToast] = useState(null);
   const toastTimerRef = React.useRef(null);
+
+  const filteredGroups = useMemo(() => {
+    const q = groupSearch.trim().toLowerCase();
+    if (!q) return groups;
+    return groups.filter((g) => g.toLowerCase().includes(q));
+  }, [groups, groupSearch]);
 
   const showToast = (type, message) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -262,24 +270,59 @@ function AddWord() {
     }
   };
 
+  const selectGroup = (group) => {
+    setSelectedGroup(group);
+    setGroupPickerOpen(false);
+    setGroupSearch('');
+  };
+
   return (
     <Layout>
       <Surface>
         <TitleBlock eyebrow="Creation" title="Capture vocabulary instantly" subtitle="Add one word or phrase, then generate content." />
         <input maxLength={80} value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. aufgeben" />
 
-        <div className="group-box">
-          <label>Group</label>
-          <div className="row left">
-            <label><input type="radio" name="groupMode" checked={groupMode === 'default'} onChange={() => setGroupMode('default')} /> Default group</label>
-            <label><input type="radio" name="groupMode" checked={groupMode === 'existing'} onChange={() => setGroupMode('existing')} /> Existing group</label>
-            <label><input type="radio" name="groupMode" checked={groupMode === 'new'} onChange={() => setGroupMode('new')} /> New group</label>
+        <div className="group-box group-box-creative">
+          <label>Choose destination group</label>
+
+          <div className="group-mode-cards">
+            <button type="button" className={`group-mode-card ${groupMode === 'default' ? 'active' : ''}`} onClick={() => setGroupMode('default')}>
+              <span className="group-mode-icon">✨</span>
+              <div>
+                <strong>Default</strong>
+                <small>Fast and simple</small>
+              </div>
+            </button>
+
+            <button type="button" className={`group-mode-card ${groupMode === 'existing' ? 'active' : ''}`} onClick={() => setGroupMode('existing')}>
+              <span className="group-mode-icon">🗂️</span>
+              <div>
+                <strong>Existing</strong>
+                <small>Pick from your groups</small>
+              </div>
+            </button>
+
+            <button type="button" className={`group-mode-card ${groupMode === 'new' ? 'active' : ''}`} onClick={() => setGroupMode('new')}>
+              <span className="group-mode-icon">🌱</span>
+              <div>
+                <strong>New group</strong>
+                <small>Create while adding</small>
+              </div>
+            </button>
           </div>
 
           {groupMode === 'existing' && (
-            <select value={selectedGroup} onChange={(e) => setSelectedGroup(e.target.value)}>
-              {groups.map((g) => <option key={g}>{g}</option>)}
-            </select>
+            <>
+              <div className="group-chip-row">
+                {groups.slice(0, 6).map((g) => (
+                  <button key={g} type="button" className={`group-chip ${selectedGroup === g ? 'active' : ''}`} onClick={() => setSelectedGroup(g)}>
+                    {g}
+                  </button>
+                ))}
+                <button type="button" className="group-chip ghost" onClick={() => setGroupPickerOpen(true)}>Browse all</button>
+              </div>
+              <p className="group-hint">Selected group: <strong>{selectedGroup}</strong></p>
+            </>
           )}
 
           {groupMode === 'new' && (
@@ -289,6 +332,32 @@ function AddWord() {
 
         <button className="btn primary generate-card-btn" onClick={add}>Generate card</button>
       </Surface>
+
+      {groupPickerOpen && (
+        <div className="group-picker-backdrop" onClick={() => setGroupPickerOpen(false)}>
+          <div className="group-picker-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="group-picker-head">
+              <h3>Choose group</h3>
+              <button className="btn ghost" onClick={() => setGroupPickerOpen(false)}>Close</button>
+            </div>
+            <input
+              value={groupSearch}
+              onChange={(e) => setGroupSearch(e.target.value)}
+              placeholder="Search groups"
+              aria-label="Search groups"
+            />
+            <div className="group-picker-list">
+              {filteredGroups.map((g) => (
+                <button key={g} className={`group-picker-item ${selectedGroup === g ? 'active' : ''}`} onClick={() => selectGroup(g)}>
+                  <span>{g}</span>
+                  {selectedGroup === g && <strong>Selected</strong>}
+                </button>
+              ))}
+              {!filteredGroups.length && <p className="group-hint">No matching groups.</p>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div key={toast.id} className={`add-toast ${toast.type}`} role="status" aria-live="polite">
