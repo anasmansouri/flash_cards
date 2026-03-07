@@ -421,10 +421,10 @@ public class Main {
         if (cc == null) {
             cc = new Content();
             cc.cardId=c.id; cc.knownLanguage=p.knownLanguage; cc.level=p.level;
-            cc.meaningTarget=c.text+" ("+LEARNING_LANGUAGE+") short meaning";
-            cc.meaningKnown=c.text+" ("+p.knownLanguage+") short meaning";
+            cc.meaningTarget = germanMeaningFallback(c.text);
+            cc.meaningKnown = knownMeaningFallback(c.text, p.knownLanguage);
             cc.sentenceTarget="Ich benutze "+c.text+" jeden Tag im Unterricht";
-            cc.sentenceKnown="I use "+c.text+" every day in class";
+            cc.sentenceKnown = knownSentenceFallback(c.text, p.knownLanguage);
             cc.source="demo";
             cc.model="demo-fallback";
             cc.generationError = openAiFailure;
@@ -436,10 +436,34 @@ public class Main {
         return cc;
     }
 
+
+    static String germanMeaningFallback(String text) {
+        return "Bedeutung von " + text + ": etwas tun oder fortsetzen";
+    }
+
+    static String knownMeaningFallback(String text, String knownLanguage) {
+        return switch (knownLanguage) {
+            case "fr" -> "Signification de " + text + " : faire une action ou une tâche";
+            case "it" -> "Significato di " + text + " : fare un'azione o un compito";
+            case "es" -> "Significado de " + text + " : realizar una acción o una tarea";
+            default -> "Meaning of " + text + ": to perform an action or task";
+        };
+    }
+
+    static String knownSentenceFallback(String text, String knownLanguage) {
+        return switch (knownLanguage) {
+            case "fr" -> "J'utilise " + text + " tous les jours en classe";
+            case "it" -> "Uso " + text + " ogni giorno in classe";
+            case "es" -> "Uso " + text + " todos los días en clase";
+            default -> "I use " + text + " every day in class";
+        };
+    }
+
     static GenerationAttempt generateWithOpenAI(Card c, Profile p) {
         String prompt = "Generate strict JSON with exactly these keys: meaningTarget, meaningKnown, sentenceTarget, sentenceKnown. " +
                 "Target language=" + LEARNING_LANGUAGE + ", known language=" + p.knownLanguage + ", level=" + p.level + ". " +
-                "Word/phrase=\"" + c.text + "\". sentenceTarget must naturally include the word/phrase and be exactly one sentence.";
+                "Word/phrase=\"" + c.text + "\". sentenceTarget must naturally include the word/phrase and be exactly one sentence. " +
+                "meaningTarget and sentenceTarget must be in German. meaningKnown and sentenceKnown must be strictly in the known language (" + p.knownLanguage + ") and never in English unless known language is en.";
 
         String payload = "{" +
                 "\"model\":\"" + esc(OPENAI_MODEL) + "\"," +
