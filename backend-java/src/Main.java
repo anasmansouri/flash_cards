@@ -442,21 +442,29 @@ public class Main {
     }
 
     static String knownMeaningFallback(String text, String knownLanguage) {
-        return switch (knownLanguage) {
-            case "fr" -> "Signification de " + text + " : faire une action ou une tâche";
-            case "it" -> "Significato di " + text + " : fare un'azione o un compito";
-            case "es" -> "Significado de " + text + " : realizar una acción o una tarea";
-            default -> "Meaning of " + text + ": to perform an action or task";
-        };
+        switch (knownLanguage) {
+            case "fr":
+                return "Signification de " + text + " : faire une action ou une tâche";
+            case "it":
+                return "Significato di " + text + " : fare un'azione o un compito";
+            case "es":
+                return "Significado de " + text + " : realizar una acción o una tarea";
+            default:
+                return "Meaning of " + text + ": to perform an action or task";
+        }
     }
 
     static String knownSentenceFallback(String text, String knownLanguage) {
-        return switch (knownLanguage) {
-            case "fr" -> "J'utilise " + text + " tous les jours en classe";
-            case "it" -> "Uso " + text + " ogni giorno in classe";
-            case "es" -> "Uso " + text + " todos los días en clase";
-            default -> "I use " + text + " every day in class";
-        };
+        switch (knownLanguage) {
+            case "fr":
+                return "J'utilise " + text + " tous les jours en classe";
+            case "it":
+                return "Uso " + text + " ogni giorno in classe";
+            case "es":
+                return "Uso " + text + " todos los días en clase";
+            default:
+                return "I use " + text + " every day in class";
+        }
     }
 
     static GenerationAttempt generateWithOpenAI(Card c, Profile p) {
