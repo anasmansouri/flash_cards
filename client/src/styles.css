@@ -288,22 +288,19 @@ input:focus, select:focus {
 }
 
 .memory-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 60;
   display: grid;
   place-items: center;
-  padding: clamp(14px, 3vw, 28px);
+  padding: clamp(22px, 4vh, 34px) clamp(14px, 3vw, 28px);
   animation: memory-overlay-in 240ms ease-out;
 }
 
 .memory-overlay__backdrop {
   position: absolute;
   inset: 0;
-  border-radius: 24px;
-  background: radial-gradient(circle at 14% 18%, #60a5fa44, transparent 45%),
-    radial-gradient(circle at 83% 80%, #9333ea44, transparent 42%),
-    linear-gradient(135deg, #0f172abf, #312e81c2 55%, #4c1d95bf);
+  background: linear-gradient(140deg, #0f172ab8, #312e81b8 60%, #1e1b4bb8);
   backdrop-filter: blur(8px);
 }
 
@@ -502,7 +499,7 @@ input:focus, select:focus {
 @media (max-width: 640px) {
   .topbar { justify-content: center; }
   .memory-card { border-radius: 18px; padding: 14px; }
-  .memory-overlay { padding: 10px; }
+  .memory-overlay { padding: 14px 10px; }
   .filter-row { grid-template-columns: 1fr; }
   .metric-grid { grid-template-columns: 1fr; }
   .cta-row { flex-direction: column; align-items: stretch; }
