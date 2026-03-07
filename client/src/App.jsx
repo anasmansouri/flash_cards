@@ -438,7 +438,7 @@ function Review() {
 
   return (
     <Layout>
-      <Surface className="review-card">
+      <Surface className={`review-card ${reveal ? 'review-overlay-open' : ''}`}>
         <TitleBlock eyebrow="Session" title="Recall challenge" />
         <div className="review-filter">
           <label>Review group</label>
@@ -481,12 +481,36 @@ function Review() {
                 <button className="btn warning" onClick={unknown}>Unknown</button>
               </div>
             )}
+
             {reveal && (
-              <div className="reveal-grid">
-                <p className="reveal-step"><strong>Meaning:</strong> {reveal.meaningKnown}</p>
-                <p className="reveal-step"><strong>Example:</strong> {reveal.sentenceTarget}</p>
-                <p className="reveal-step"><strong>Translation:</strong> {reveal.sentenceKnown}</p>
-                <button className="btn primary" onClick={() => next(selectedGroup)}>Next card</button>
+              <div className="memory-overlay" role="dialog" aria-modal="true" aria-label={`Learning card for ${card.text}`}>
+                <div className="memory-overlay__backdrop" />
+                <article className="memory-card">
+                  <header className="memory-card__header">
+                    <p className="memory-chip">🧠 Deep focus card</p>
+                    <h3>{card.text}</h3>
+                    <p className="memory-subtitle">Group: {selectedGroup} · Remaining today: {summary.stillToRevise}</p>
+                  </header>
+
+                  <div className="memory-card__content">
+                    <section className="memory-section meaning">
+                      <p className="memory-label">Meaning</p>
+                      <p>{reveal.meaningKnown}</p>
+                    </section>
+                    <section className="memory-section example">
+                      <p className="memory-label">Example</p>
+                      <p>{reveal.sentenceTarget}</p>
+                    </section>
+                    <section className="memory-section translation">
+                      <p className="memory-label">Translation</p>
+                      <p>{reveal.sentenceKnown}</p>
+                    </section>
+                  </div>
+
+                  <div className="memory-card__footer">
+                    <button className="btn primary memory-next-btn" onClick={() => next(selectedGroup)}>Next card</button>
+                  </div>
+                </article>
               </div>
             )}
           </>
@@ -495,6 +519,7 @@ function Review() {
     </Layout>
   );
 }
+
 
 function Library() {
   const [query, setQuery] = useState('');
