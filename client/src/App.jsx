@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { request } from './api';
 
-const languages = ['en', 'fr', 'de', 'it', 'es'];
-const levels = ['A1', 'A2', 'B1', 'B2', 'C1'];
+const knownLanguages = ['en', 'fr', 'it', 'es'];
+const levels = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
 function TitleBlock({ eyebrow, title, subtitle }) {
   return (
@@ -137,46 +137,69 @@ function AuthPage() {
 }
 
 function ProfileForm({ onboarding = false }) {
-  const [profile, setProfile] = useState({ knownLanguage: 'en', targetLanguage: 'fr', level: 'A1' });
+  const [profile, setProfile] = useState({ knownLanguage: 'en', level: 'A1' });
+  const [loadingProfile, setLoadingProfile] = useState(true);
   const nav = useNavigate();
-  const valid = profile.knownLanguage !== profile.targetLanguage;
+
+  useEffect(() => {
+    let active = true;
+    request('/profile')
+      .then((data) => {
+        if (!active) return;
+        setProfile({
+          knownLanguage: data.knownLanguage,
+          level: data.level
+        });
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoadingProfile(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const save = async () => {
     await request('/profile', { method: 'PATCH', body: JSON.stringify(profile) });
     nav('/dashboard');
   };
+
+  if (loadingProfile) {
+    return (
+      <Layout>
+        <div className="loading">Loading…</div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
       <Surface>
         <TitleBlock
           eyebrow={onboarding ? 'Welcome' : 'Personalization'}
-          title={onboarding ? 'Set your learning profile' : 'Tune your experience'}
-          subtitle="Profile settings apply to newly generated cards."
+          title={onboarding ? 'Set your German learning profile' : 'Tune your German learning profile'}
+          subtitle="Changes apply to newly generated cards."
         />
 
         <div className="grid-3">
           <div>
-            <label>Known language</label>
+            <label>Your language</label>
             <select value={profile.knownLanguage} onChange={(e) => setProfile((p) => ({ ...p, knownLanguage: e.target.value }))}>
-              {languages.map((l) => <option key={l}>{l}</option>)}
+              {knownLanguages.map((l) => <option key={l}>{l}</option>)}
             </select>
           </div>
           <div>
-            <label>Target language</label>
-            <select value={profile.targetLanguage} onChange={(e) => setProfile((p) => ({ ...p, targetLanguage: e.target.value }))}>
-              {languages.map((l) => <option key={l} disabled={l === profile.knownLanguage}>{l}</option>)}
-            </select>
-          </div>
-          <div>
-            <label>CEFR level</label>
+            <label>German level</label>
             <select value={profile.level} onChange={(e) => setProfile((p) => ({ ...p, level: e.target.value }))}>
               {levels.map((l) => <option key={l}>{l}</option>)}
             </select>
           </div>
         </div>
 
-        {!valid && <p className="warn">Known and target language must be different.</p>}
-        <button className="btn primary profile-save-btn" disabled={!valid} onClick={save}>Save profile</button>
+        <p className="help">Learning language is fixed to German.</p>
+        <button className="btn primary profile-save-btn" onClick={save}>Save profile</button>
       </Surface>
     </Layout>
   );

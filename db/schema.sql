@@ -8,15 +8,17 @@ CREATE TABLE users (
 CREATE TABLE user_profile (
   user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   known_language TEXT NOT NULL,
-  target_language TEXT NOT NULL,
+  target_language TEXT NOT NULL DEFAULT 'de',
   level TEXT NOT NULL,
+  CHECK (target_language = 'de'),
   CHECK (known_language <> target_language)
 );
 
 CREATE TABLE cards (
   id UUID PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  target_language TEXT NOT NULL,
+  target_language TEXT NOT NULL DEFAULT 'de',
+  CHECK (target_language = 'de'),
   text TEXT NOT NULL,
   group_name TEXT NOT NULL DEFAULT 'Default',
   status TEXT NOT NULL CHECK (status IN ('generating', 'ready', 'failed')),

@@ -41,7 +41,7 @@ TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/signup \
 curl -s -X PATCH http://localhost:3001/api/profile \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"knownLanguage":"en","targetLanguage":"de","level":"A1"}' >/dev/null
+  -d '{"knownLanguage":"en","level":"A1"}' >/dev/null
 
 CREATE=$(curl -s -X POST http://localhost:3001/api/cards \
   -H "Authorization: Bearer $TOKEN" \

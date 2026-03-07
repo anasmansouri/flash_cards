@@ -18,16 +18,17 @@ import java.util.*;
 import java.util.concurrent.Executors;
 
 public class Main {
-    static final Set<String> LANGUAGES = Set.of("en", "fr", "de", "it", "es");
-    static final Set<String> LEVELS = Set.of("A1", "A2", "B1", "B2", "C1");
+    static final Set<String> KNOWN_LANGUAGES = Set.of("en", "fr", "it", "es");
+    static final Set<String> LEVELS = Set.of("A1", "A2", "B1", "B2", "C1", "C2");
+    static final String LEARNING_LANGUAGE = "de";
     static final String DEFAULT_GROUP = "Default";
     static final String OPENAI_API_KEY = System.getenv("OPENAI_API_KEY");
     static final String OPENAI_MODEL = System.getenv().getOrDefault("OPENAI_MODEL", "gpt-4o-mini");
     static final HttpClient HTTP = HttpClient.newHttpClient();
 
     static class User { String id, email, password, createdAt; }
-    static class Profile { String userId, knownLanguage, targetLanguage, level; }
-    static class Card { String id, userId, targetLanguage, text, status, createdAt, groupName; }
+    static class Profile { String userId, knownLanguage, level; }
+    static class Card { String id, userId, text, status, createdAt, groupName; }
     static class Content { String cardId, knownLanguage, level, meaningTarget, meaningKnown, sentenceTarget, sentenceKnown, source, model, generationError, createdAt; }
     static class Review { String userId, cardId, result, reviewedAt; }
     static class Srs { String userId, cardId, dueAt; int intervalDays; String updatedAt; }
@@ -116,17 +117,16 @@ public class Main {
     static void getProfile(HttpExchange ex, String userId) throws IOException {
         Profile p = profile(userId);
         if (p==null) { send(ex,404,"{\"error\":\"PROFILE_NOT_FOUND\"}"); return; }
-        send(ex,200,String.format("{\"knownLanguage\":\"%s\",\"targetLanguage\":\"%s\",\"level\":\"%s\"}", p.knownLanguage,p.targetLanguage,p.level));
+        send(ex,200,String.format("{\"knownLanguage\":\"%s\",\"targetLanguage\":\"%s\",\"level\":\"%s\"}", p.knownLanguage,LEARNING_LANGUAGE,p.level));
     }
 
     static void patchProfile(HttpExchange ex, String userId) throws IOException {
         Map<String,String> b = parseJson(readBody(ex));
-        String known=b.get("knownLanguage"), target=b.get("targetLanguage"), level=b.get("level");
-        if (!LANGUAGES.contains(known) || !LANGUAGES.contains(target) || !LEVELS.contains(level)) { send(ex,400,"{\"error\":\"INVALID_INPUT\"}"); return; }
-        if (known.equals(target)) { send(ex,400,"{\"error\":\"LANGUAGE_PAIR_INVALID\",\"message\":\"Target language must differ from known language.\"}"); return; }
+        String known=b.get("knownLanguage"), level=b.get("level");
+        if (!KNOWN_LANGUAGES.contains(known) || !LEVELS.contains(level)) { send(ex,400,"{\"error\":\"INVALID_INPUT\"}"); return; }
         Profile p=profile(userId); if (p==null){ p=new Profile(); p.userId=userId; profiles.add(p); }
-        p.knownLanguage=known; p.targetLanguage=target; p.level=level;
-        send(ex,200,String.format("{\"knownLanguage\":\"%s\",\"targetLanguage\":\"%s\",\"level\":\"%s\"}", known,target,level));
+        p.knownLanguage=known; p.level=level;
+        send(ex,200,String.format("{\"knownLanguage\":\"%s\",\"targetLanguage\":\"%s\",\"level\":\"%s\"}", known,LEARNING_LANGUAGE,level));
     }
 
     static void groups(HttpExchange ex, String userId) throws IOException {
@@ -168,7 +168,7 @@ public class Main {
         }
 
         Card c=new Card();
-        c.id=uuid(); c.userId=userId; c.targetLanguage=p.targetLanguage; c.text=text; c.status="generating"; c.createdAt=now(); c.groupName=groupName;
+        c.id=uuid(); c.userId=userId; c.text=text; c.status="generating"; c.createdAt=now(); c.groupName=groupName;
         cards.add(c);
 
         Srs s=new Srs(); s.userId=userId; s.cardId=c.id; s.intervalDays=1; s.dueAt=now(); s.updatedAt=now(); srsStates.add(s);
@@ -300,7 +300,7 @@ public class Main {
             Instant due=Instant.parse(s.dueAt);
             if(due.isAfter(now)) continue;
             Card c=card(userId,s.cardId);
-            if(c==null || !"ready".equals(c.status) || !c.targetLanguage.equals(p.targetLanguage)) continue;
+            if(c==null || !"ready".equals(c.status)) continue;
             if (!"All".equalsIgnoreCase(selectedGroup) && !c.groupName.equalsIgnoreCase(selectedGroup)) continue;
             if(oldest==null || due.isBefore(oldest)){ oldest=due; found=c; }
         }
@@ -421,10 +421,10 @@ public class Main {
         if (cc == null) {
             cc = new Content();
             cc.cardId=c.id; cc.knownLanguage=p.knownLanguage; cc.level=p.level;
-            cc.meaningTarget=c.text+" ("+c.targetLanguage+") short meaning";
+            cc.meaningTarget=c.text+" ("+LEARNING_LANGUAGE+") short meaning";
             cc.meaningKnown=c.text+" ("+p.knownLanguage+") short meaning";
-            cc.sentenceTarget="I use "+c.text+" in class every day";
-            cc.sentenceKnown="Translation: I use "+c.text+" in class every day";
+            cc.sentenceTarget="Ich benutze "+c.text+" jeden Tag im Unterricht";
+            cc.sentenceKnown="I use "+c.text+" every day in class";
             cc.source="demo";
             cc.model="demo-fallback";
             cc.generationError = openAiFailure;
@@ -438,7 +438,7 @@ public class Main {
 
     static GenerationAttempt generateWithOpenAI(Card c, Profile p) {
         String prompt = "Generate strict JSON with exactly these keys: meaningTarget, meaningKnown, sentenceTarget, sentenceKnown. " +
-                "Target language=" + c.targetLanguage + ", known language=" + p.knownLanguage + ", level=" + p.level + ". " +
+                "Target language=" + LEARNING_LANGUAGE + ", known language=" + p.knownLanguage + ", level=" + p.level + ". " +
                 "Word/phrase=\"" + c.text + "\". sentenceTarget must naturally include the word/phrase and be exactly one sentence.";
 
         String payload = "{" +

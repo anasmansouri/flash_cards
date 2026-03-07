@@ -1,6 +1,6 @@
 # Flash Cards Web App v1
 
-React frontend + **Java backend** implementation of strict active-recall language cards.
+React frontend + **Java backend** implementation focused on learning German with strict active recall.
 
 ## Prerequisites
 
@@ -41,10 +41,10 @@ java -cp backend-java/out Main
 ```
 
 4. Add a word from the app. The backend will call OpenAI for:
-   - `meaningTarget`
-   - `meaningKnown`
-   - `sentenceTarget`
-   - `sentenceKnown`
+   - `meaningTarget` (German explanation)
+   - `meaningKnown` (explanation in your language)
+   - `sentenceTarget` (German sentence adapted to your level)
+   - `sentenceKnown` (translation in your language)
 
 5. If the key is missing/invalid, backend falls back to demo generation content.
 
@@ -87,7 +87,7 @@ npm run dev
 - `POST /api/auth/login`
 - `POST /api/auth/forgot-password`
 - `GET /api/profile`
-- `PATCH /api/profile`
+- `PATCH /api/profile` (set your language + German level; target language is always German)
 - `POST /api/cards`
 - `GET /api/cards`
 - `DELETE /api/cards/{id}`
@@ -103,6 +103,8 @@ npm run dev
 
 ## Notes
 
+- Learning language is fixed to **German (`de`)** across the app.
+- Settings/onboarding only control your language (`knownLanguage`) and your German CEFR level (`A1`-`C2`).
 - Backend storage is in-memory for v1 scaffold.
 - `db/schema.sql` still contains the target Postgres schema design.
 - Card generation remains server-side and enforces strict no-reveal flow (`/session/next` returns only `cardId` + `text`).
