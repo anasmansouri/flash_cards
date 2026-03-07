@@ -121,30 +121,61 @@ npm run dev
   - `DELETE /api/groups/{groupName}/cards` deletes all cards in that group.
   - `DELETE /api/groups/{groupName}` deletes the group label by moving its cards to `Default`.
 
-## What to implement next (recommended roadmap)
+## Project status now
 
-1. **Library group filter + sorting**
-   - Add a group dropdown in Library (like Review) so users can browse cards by group.
-   - Add sort options (`newest`, `oldest`, `due first`, `status`).
+Current state: **working beta / prototype**, not production-ready yet.
 
-2. **Status clarity in Library**
-   - Add a small status legend/help text for `ready`, `generating`, and `failed`.
-   - `ready` means the generated content is complete and the card can appear in review sessions when due.
+### What is already implemented
 
-3. **Persistent database (Postgres)**
-   - Replace in-memory stores with Postgres using the schema in `db/schema.sql`.
-   - Add migrations and startup checks.
+- End-to-end user flow is available: signup/login, onboarding/settings, add word, review session, library, stats.
+- Strict active-recall contract is implemented (`next` returns only word; reveal appears only after `unknown`).
+- Grouping is implemented (create/select groups, group-filtered review and library management).
+- German-learning profile model is implemented (fixed German target, user known language + CEFR level).
+- OpenAI generation is integrated server-side with diagnostics and a fallback mode when key/model output fails.
 
-4. **Background generation jobs**
-   - Move generation/retry work to a background worker queue.
-   - Add retry backoff and better failure diagnostics in `quality_flags`.
+### Current technical limitations
 
-5. **Auth hardening**
-   - Password hashing, refresh tokens/session expiry, and basic rate limits for auth + add-card endpoints.
+- Backend persistence is **in-memory** (data resets on restart).
+- Authentication is basic (no password hashing, refresh tokens, robust session management).
+- Background jobs/queueing are not implemented (generation is inline in request flow).
+- Observability is minimal (limited structured logs, no monitoring/alerting).
+- Automated test coverage is still limited for full end-to-end production scenarios.
 
-6. **Review analytics**
-   - Add a dedicated history endpoint and charts for 7/30-day known vs unknown trends.
-   - Add per-group performance insights.
+## Next features needed before commercialization
 
-7. **Polish + accessibility**
-   - Empty states, loading skeletons, better form validation messages, keyboard navigation, and contrast checks.
+1. **Production-grade security and auth**
+   - Hash passwords (e.g., bcrypt/argon2), secure token lifecycle, session expiry, logout invalidation.
+   - Add CSRF/rate-limiting/abuse protections, brute-force protections, and stricter validation.
+   - Add secrets management and environment hardening for deployment.
+
+2. **Persistent database + migrations**
+   - Replace in-memory stores with Postgres for users/cards/reviews/SRS.
+   - Add migration tooling, backups, restore strategy, and integrity checks.
+
+3. **Reliable generation pipeline**
+   - Move generation/retry to background workers/queues.
+   - Add retry policy with backoff, dead-letter handling, and operator-visible failure reasons.
+   - Add quality and language checks that enforce known-language correctness consistently.
+
+4. **Payments and subscription enforcement**
+   - Implement billing (plans, free vs paid limits, webhooks, invoice state sync).
+   - Enforce daily generation quotas and account entitlements from billing status.
+
+5. **Operational readiness (DevOps/SRE)**
+   - Containerize services, add staging/prod deployment pipelines, health checks, and rollbacks.
+   - Add monitoring/alerting (API latency, error rate, generation failures, queue depth).
+   - Add centralized logging and audit trails.
+
+6. **Compliance and legal readiness**
+   - Privacy policy, terms of service, cookie policy, account deletion/export flows.
+   - GDPR-ready data handling and consent records (if serving EU users).
+
+7. **Product quality gates**
+   - Expand automated tests (API integration, E2E UI, regression and load tests).
+   - Accessibility pass (keyboard/screen-reader/contrast), responsive QA, and UX polish.
+   - Improve onboarding/help states and reliability under edge cases.
+
+8. **Commercial product analytics**
+   - Add event instrumentation for activation, retention, conversion, and churn.
+   - Build dashboards for learning outcomes and business KPIs.
+
