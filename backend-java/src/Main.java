@@ -5,11 +5,6 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.Serializable;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -26,6 +21,10 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.*;
 import java.util.concurrent.Executors;
+import java.sql.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 public class Main {
     static final Set<String> KNOWN_LANGUAGES = Set.of("en", "fr", "it", "es");
@@ -35,26 +34,19 @@ public class Main {
     static final String OPENAI_API_KEY = System.getenv("OPENAI_API_KEY");
     static final String OPENAI_MODEL = System.getenv().getOrDefault("OPENAI_MODEL", "gpt-4o-mini");
     static final HttpClient HTTP = HttpClient.newHttpClient();
-    static final String DATA_FILE = "backend-java/data/state.bin";
+    static final String JDBC_DATABASE_URL = System.getenv().getOrDefault("JDBC_DATABASE_URL", "").trim();
+    static final String JDBC_DATABASE_USER = System.getenv().getOrDefault("JDBC_DATABASE_USER", "");
+    static final String JDBC_DATABASE_PASSWORD = System.getenv().getOrDefault("JDBC_DATABASE_PASSWORD", "");
+    static final String MIGRATIONS_DIR = "db/migrations";
     static final Pattern EMAIL_RE = Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
 
-    static class User implements Serializable { String id, email, password, plan, createdAt; }
-    static class Profile implements Serializable { String userId, knownLanguage, level; }
-    static class Card implements Serializable { String id, userId, text, status, createdAt, groupName; }
-    static class Content implements Serializable { String cardId, knownLanguage, level, meaningTarget, meaningKnown, sentenceTarget, sentenceKnown, source, model, generationError, createdAt; }
-    static class Review implements Serializable { String userId, cardId, result, reviewedAt; }
-    static class Srs implements Serializable { String userId, cardId, dueAt; int intervalDays; String updatedAt; }
-    static class Event implements Serializable { String id, userId, name, createdAt; }
-    static class StateSnapshot implements Serializable {
-        List<User> users = new ArrayList<>();
-        List<Profile> profiles = new ArrayList<>();
-        List<Card> cards = new ArrayList<>();
-        List<Content> contents = new ArrayList<>();
-        List<Review> reviews = new ArrayList<>();
-        List<Srs> srsStates = new ArrayList<>();
-        List<Event> events = new ArrayList<>();
-        Map<String, String> tokens = new HashMap<>();
-    }
+    static class User { String id, email, password, plan, createdAt; }
+    static class Profile { String userId, knownLanguage, level; }
+    static class Card { String id, userId, text, status, createdAt, groupName; }
+    static class Content { String cardId, knownLanguage, level, meaningTarget, meaningKnown, sentenceTarget, sentenceKnown, source, model, generationError, createdAt; }
+    static class Review { String userId, cardId, result, reviewedAt; }
+    static class Srs { String userId, cardId, dueAt; int intervalDays; String updatedAt; }
+    static class Event { String id, userId, name, createdAt; }
 
     static final List<User> users = new ArrayList<>();
     static final List<Profile> profiles = new ArrayList<>();
@@ -74,6 +66,7 @@ public class Main {
 
 
     public static void main(String[] args) throws Exception {
+        validatePersistenceConfig();
         loadState();
         HttpServer server = HttpServer.create(new InetSocketAddress(3001), 0);
         server.createContext("/api", Main::handle);
@@ -812,39 +805,197 @@ public class Main {
     }
 
     static void loadState() {
-        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(DATA_FILE))) {
-            StateSnapshot snapshot = (StateSnapshot) ois.readObject();
-            users.clear(); users.addAll(snapshot.users);
-            profiles.clear(); profiles.addAll(snapshot.profiles);
-            cards.clear(); cards.addAll(snapshot.cards);
-            contents.clear(); contents.addAll(snapshot.contents);
-            reviews.clear(); reviews.addAll(snapshot.reviews);
-            srsStates.clear(); srsStates.addAll(snapshot.srsStates);
-            events.clear(); events.addAll(snapshot.events);
-            tokens.clear(); tokens.putAll(snapshot.tokens);
-        } catch (Exception ignored) {
-            // First run or no persisted state yet.
+        try {
+            loadStateFromPostgres();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load state from Postgres", e);
         }
     }
 
     static synchronized void persistState() {
         try {
-            java.io.File dir = new java.io.File("backend-java/data");
-            if (!dir.exists()) dir.mkdirs();
-            StateSnapshot snapshot = new StateSnapshot();
-            snapshot.users.addAll(users);
-            snapshot.profiles.addAll(profiles);
-            snapshot.cards.addAll(cards);
-            snapshot.contents.addAll(contents);
-            snapshot.reviews.addAll(reviews);
-            snapshot.srsStates.addAll(srsStates);
-            snapshot.events.addAll(events);
-            snapshot.tokens.putAll(tokens);
-            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(DATA_FILE))) {
-                oos.writeObject(snapshot);
+            persistStateToPostgres();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to persist state to Postgres", e);
+        }
+    }
+
+    static void validatePersistenceConfig() {
+        if (JDBC_DATABASE_URL.isBlank()) {
+            throw new IllegalStateException("JDBC_DATABASE_URL is required");
+        }
+
+        try (Connection c = openPostgresConnection()) {
+            applyMigrations(c);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to validate Postgres configuration", e);
+        }
+    }
+
+    static Connection openPostgresConnection() throws SQLException {
+        if (JDBC_DATABASE_USER.isBlank()) {
+            return DriverManager.getConnection(JDBC_DATABASE_URL);
+        }
+        return DriverManager.getConnection(JDBC_DATABASE_URL, JDBC_DATABASE_USER, JDBC_DATABASE_PASSWORD);
+    }
+
+    static void applyMigrations(Connection c) throws SQLException, IOException {
+        try (Statement st = c.createStatement()) {
+            st.executeUpdate("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+        }
+
+        Set<String> applied = new HashSet<>();
+        try (PreparedStatement ps = c.prepareStatement("SELECT version FROM schema_migrations"); ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) applied.add(rs.getString(1));
+        }
+
+        Path dir = Paths.get(MIGRATIONS_DIR);
+        if (!Files.exists(dir)) {
+            throw new IOException("Migrations directory not found: " + MIGRATIONS_DIR);
+        }
+
+        List<Path> files;
+        try (var stream = Files.list(dir)) {
+            files = stream
+                    .filter(p -> p.getFileName().toString().endsWith(".sql"))
+                    .sorted(Comparator.comparing(p -> p.getFileName().toString()))
+                    .toList();
+        }
+
+        for (Path migration : files) {
+            String version = migration.getFileName().toString();
+            if (applied.contains(version)) continue;
+
+            String sql = Files.readString(migration, StandardCharsets.UTF_8);
+            c.setAutoCommit(false);
+            try (Statement st = c.createStatement()) {
+                st.execute(sql);
             }
-        } catch (Exception ignored) {
-            // Do not break request flow on persistence error in v2 beta.
+            try (PreparedStatement ps = c.prepareStatement("INSERT INTO schema_migrations(version, applied_at) VALUES (?,?)")) {
+                ps.setString(1, version);
+                ps.setString(2, now());
+                ps.executeUpdate();
+            }
+            c.commit();
+            c.setAutoCommit(true);
+        }
+    }
+
+    static void loadStateFromPostgres() throws SQLException, IOException {
+        try (Connection c = openPostgresConnection()) {
+            applyMigrations(c);
+            users.clear(); profiles.clear(); cards.clear(); contents.clear(); reviews.clear(); srsStates.clear(); events.clear(); tokens.clear();
+
+            try (PreparedStatement ps = c.prepareStatement("SELECT id,email,password_hash,plan,created_at FROM users"); ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    User u = new User();
+                    u.id = rs.getString(1); u.email = rs.getString(2); u.password = rs.getString(3); u.plan = rs.getString(4); u.createdAt = rs.getString(5);
+                    users.add(u);
+                }
+            }
+            try (PreparedStatement ps = c.prepareStatement("SELECT user_id,known_language,level FROM user_profile"); ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Profile p = new Profile(); p.userId = rs.getString(1); p.knownLanguage = rs.getString(2); p.level = rs.getString(3); profiles.add(p);
+                }
+            }
+            try (PreparedStatement ps = c.prepareStatement("SELECT id,user_id,text,status,created_at,group_name FROM cards"); ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Card card = new Card();
+                    card.id = rs.getString(1); card.userId = rs.getString(2); card.text = rs.getString(3); card.status = rs.getString(4); card.createdAt = rs.getString(5); card.groupName = rs.getString(6);
+                    cards.add(card);
+                }
+            }
+            try (PreparedStatement ps = c.prepareStatement("SELECT card_id,known_language,level,meaning_target,meaning_known,sentence_target,sentence_known,source,model,generation_error,created_at FROM card_content"); ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Content x = new Content();
+                    x.cardId = rs.getString(1); x.knownLanguage = rs.getString(2); x.level = rs.getString(3); x.meaningTarget = rs.getString(4); x.meaningKnown = rs.getString(5); x.sentenceTarget = rs.getString(6); x.sentenceKnown = rs.getString(7); x.source = rs.getString(8); x.model = rs.getString(9); x.generationError = rs.getString(10); x.createdAt = rs.getString(11);
+                    contents.add(x);
+                }
+            }
+            try (PreparedStatement ps = c.prepareStatement("SELECT id,user_id,card_id,result,reviewed_at FROM reviews"); ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Review r = new Review(); r.userId = rs.getString(2); r.cardId = rs.getString(3); r.result = rs.getString(4); r.reviewedAt = rs.getString(5); reviews.add(r);
+                }
+            }
+            try (PreparedStatement ps = c.prepareStatement("SELECT user_id,card_id,due_at,interval_days,updated_at FROM srs_state"); ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Srs s = new Srs(); s.userId = rs.getString(1); s.cardId = rs.getString(2); s.dueAt = rs.getString(3); s.intervalDays = rs.getInt(4); s.updatedAt = rs.getString(5); srsStates.add(s);
+                }
+            }
+            try (PreparedStatement ps = c.prepareStatement("SELECT token,user_id FROM sessions"); ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) tokens.put(rs.getString(1), rs.getString(2));
+            }
+            try (PreparedStatement ps = c.prepareStatement("SELECT id,user_id,name,created_at FROM events"); ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    Event e = new Event(); e.id = rs.getString(1); e.userId = rs.getString(2); e.name = rs.getString(3); e.createdAt = rs.getString(4); events.add(e);
+                }
+            }
+        }
+    }
+
+    static void persistStateToPostgres() throws SQLException {
+        try (Connection c = openPostgresConnection()) {
+            try {
+                applyMigrations(c);
+            } catch (IOException e) {
+                throw new SQLException("Failed to apply migrations", e);
+            }
+            c.setAutoCommit(false);
+            try (Statement st = c.createStatement()) {
+                st.executeUpdate("TRUNCATE TABLE events, sessions, srs_state, reviews, card_content, cards, user_profile, users");
+            }
+
+            try (PreparedStatement ps = c.prepareStatement("INSERT INTO users(id,email,password_hash,plan,created_at) VALUES (?,?,?,?,?)")) {
+                for (User u : users) {
+                    ps.setString(1, u.id); ps.setString(2, u.email); ps.setString(3, u.password); ps.setString(4, u.plan == null ? "free" : u.plan); ps.setString(5, u.createdAt); ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            try (PreparedStatement ps = c.prepareStatement("INSERT INTO user_profile(user_id,known_language,target_language,level) VALUES (?,?,?,?)")) {
+                for (Profile p : profiles) {
+                    ps.setString(1, p.userId); ps.setString(2, p.knownLanguage); ps.setString(3, LEARNING_LANGUAGE); ps.setString(4, p.level); ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            try (PreparedStatement ps = c.prepareStatement("INSERT INTO cards(id,user_id,target_language,text,group_name,status,created_at) VALUES (?,?,?,?,?,?,?)")) {
+                for (Card card : cards) {
+                    ps.setString(1, card.id); ps.setString(2, card.userId); ps.setString(3, LEARNING_LANGUAGE); ps.setString(4, card.text); ps.setString(5, card.groupName); ps.setString(6, card.status); ps.setString(7, card.createdAt); ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            try (PreparedStatement ps = c.prepareStatement("INSERT INTO card_content(card_id,known_language,level,meaning_target,meaning_known,sentence_target,sentence_known,source,model,generation_error,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")) {
+                for (Content x : contents) {
+                    ps.setString(1, x.cardId); ps.setString(2, x.knownLanguage); ps.setString(3, x.level); ps.setString(4, x.meaningTarget); ps.setString(5, x.meaningKnown); ps.setString(6, x.sentenceTarget); ps.setString(7, x.sentenceKnown); ps.setString(8, x.source); ps.setString(9, x.model); ps.setString(10, x.generationError == null ? "" : x.generationError); ps.setString(11, x.createdAt); ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            try (PreparedStatement ps = c.prepareStatement("INSERT INTO reviews(id,user_id,card_id,result,reviewed_at) VALUES (?,?,?,?,?)")) {
+                for (Review r : reviews) {
+                    ps.setString(1, uuid()); ps.setString(2, r.userId); ps.setString(3, r.cardId); ps.setString(4, r.result); ps.setString(5, r.reviewedAt); ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            try (PreparedStatement ps = c.prepareStatement("INSERT INTO srs_state(user_id,card_id,due_at,interval_days,updated_at) VALUES (?,?,?,?,?)")) {
+                for (Srs sr : srsStates) {
+                    ps.setString(1, sr.userId); ps.setString(2, sr.cardId); ps.setString(3, sr.dueAt); ps.setInt(4, sr.intervalDays); ps.setString(5, sr.updatedAt); ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            try (PreparedStatement ps = c.prepareStatement("INSERT INTO sessions(token,user_id,created_at) VALUES (?,?,?)")) {
+                for (Map.Entry<String, String> kv : tokens.entrySet()) {
+                    ps.setString(1, kv.getKey()); ps.setString(2, kv.getValue()); ps.setString(3, now()); ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            try (PreparedStatement ps = c.prepareStatement("INSERT INTO events(id,user_id,name,created_at) VALUES (?,?,?,?)")) {
+                for (Event e : events) {
+                    ps.setString(1, e.id); ps.setString(2, e.userId); ps.setString(3, e.name); ps.setString(4, e.createdAt); ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+
+            c.commit();
+            c.setAutoCommit(true);
         }
     }
 

@@ -20,8 +20,7 @@ This repository already includes a working end-to-end experience for language le
   - password hashing via PBKDF2 (new signups)
   - stronger signup validation (email format + stronger password rule)
   - backward-compatible login verification for legacy plain-password records
-- Durable local persistence layer (beta):
-  - backend state now survives restarts using snapshot persistence at `backend-java/data/state.bin`
+- Postgres-backed persistence with startup DB validation and schema migrations.
 - Generation validation tightened:
   - strict key set check for generated payload (no missing/extra keys)
   - sentence sanity guard for one-sentence target output
@@ -76,7 +75,7 @@ This repository already includes a working end-to-end experience for language le
 
 ### What is still prototype-level
 
-- Persistence is now local snapshot-based (not yet production Postgres).
+- Persistence is Postgres-only; additional production hardening is still required (indexes, backup/restore drills, connection pool strategy).
 - Auth is improved (hashed passwords) but still not full production security/session architecture yet.
 - No queue-based async generation workers.
 - Limited observability (metrics/tracing/alerts).
@@ -99,11 +98,22 @@ This repository already includes a working end-to-end experience for language le
 export OPENAI_API_KEY="sk-..."
 export OPENAI_MODEL="gpt-4o-mini"
 
+# Required Postgres persistence (v2)
+# Example: export JDBC_DATABASE_URL="jdbc:postgresql://localhost:5432/recall_cards"
+# Optional when auth is required by DB:
+# export JDBC_DATABASE_USER="postgres"
+# export JDBC_DATABASE_PASSWORD="postgres"
+
 javac backend-java/src/Main.java -d backend-java/out
 java -cp backend-java/out Main
 ```
 
 Backend API: `http://localhost:3001`
+
+Persistence mode:
+- `JDBC_DATABASE_URL` is required.
+- On startup, backend validates DB connectivity and runs migrations from `db/migrations`.
+- Runtime persistence and reload use Postgres as the single source of truth.
 
 ### Run frontend
 
@@ -190,15 +200,16 @@ Goal: move from prototype to stable beta.
 ✅ Implemented now:
 - Safer auth foundation (password hashing + stronger validation).
 - Better generation validation baseline.
-- State persistence across restarts (snapshot file for beta environments).
+- Restart persistence with two modes:
+  - Postgres persistence as the required source of truth
+- Startup migration runner with schema version tracking (`schema_migrations`) and SQL files in `db/migrations`.
 - New operational/security foundations: health endpoint, auth attempt rate limiting, secure response headers, basic event ingestion, and account export/delete APIs.
 
 ⏳ Still required to close full v2:
-- Postgres persistence (replace snapshot/in-memory runtime model).
-- Migration system + schema versioning.
+- Production-grade DB hardening (indexes, backup/restore drill, connection pool strategy).
 - Expanded API + integration tests.
 
-**Exit criteria for v2:** Postgres-backed data survives restarts and core flows are stable in staging.
+**Exit criteria for v2:** Postgres-backed data survives restarts with migration/backups tested and core flows stable in staging.
 
 ## v3 — Production architecture
 
@@ -252,4 +263,4 @@ Goal: launch and sell confidently.
 - Learning language is fixed to German (`de`) in current product direction.
 - Free plan daily generation limit is enforced in backend.
 - Premium plan removes daily card creation limit.
-- `db/schema.sql` remains the Postgres target schema for final v2 persistence completion.
+- `db/schema.sql` remains the Postgres reference schema for migration hardening and production rollout checks.
