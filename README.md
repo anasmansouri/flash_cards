@@ -150,6 +150,7 @@ Expected:
 - `POST /api/auth/signup`
 - `POST /api/auth/login`
 - `POST /api/auth/forgot-password`
+- `GET /api/health`
 
 ### Profile + plan
 - `GET /api/profile`
@@ -173,6 +174,10 @@ Expected:
 - `DELETE /api/groups/{groupName}`
 - `GET /api/review/summary`
 - `GET /api/stats`
+- `POST /api/events`
+- `GET /api/events`
+- `GET /api/account/export`
+- `DELETE /api/account`
 
 ---
 
@@ -186,6 +191,7 @@ Goal: move from prototype to stable beta.
 - Safer auth foundation (password hashing + stronger validation).
 - Better generation validation baseline.
 - State persistence across restarts (snapshot file for beta environments).
+- New operational/security foundations: health endpoint, auth attempt rate limiting, secure response headers, basic event ingestion, and account export/delete APIs.
 
 ⏳ Still required to close full v2:
 - Postgres persistence (replace snapshot/in-memory runtime model).
@@ -198,8 +204,12 @@ Goal: move from prototype to stable beta.
 
 Goal: make backend production-capable.
 
+✅ Foundations implemented now:
+- Health endpoint (`/api/health`) and basic operational telemetry hooks (`/api/events`).
+- Auth attempt rate limiting baseline and safer response security headers.
+
+⏳ Still required to close full v3:
 - Async generation workers + queue + retry/backoff.
-- Rate limiting + abuse protections.
 - Structured logging + monitoring + alerting dashboards.
 - Deployment pipeline (staging/prod), health checks, rollback strategy.
 
@@ -212,6 +222,7 @@ Goal: ready for real paid customers.
 - Billing integration (plans, subscriptions, webhook reconciliation).
 - Entitlement enforcement tied to billing state.
 - Compliance/legal package (ToS, Privacy Policy, data export/delete).
+  - Note: API foundations for export/delete are implemented; legal/policy and full workflows remain.
 - Product analytics instrumentation (activation, retention, churn, conversion).
 - Accessibility and UX quality pass.
 

@@ -44,6 +44,7 @@ public class Main {
     static class Content implements Serializable { String cardId, knownLanguage, level, meaningTarget, meaningKnown, sentenceTarget, sentenceKnown, source, model, generationError, createdAt; }
     static class Review implements Serializable { String userId, cardId, result, reviewedAt; }
     static class Srs implements Serializable { String userId, cardId, dueAt; int intervalDays; String updatedAt; }
+    static class Event implements Serializable { String id, userId, name, createdAt; }
     static class StateSnapshot implements Serializable {
         List<User> users = new ArrayList<>();
         List<Profile> profiles = new ArrayList<>();
@@ -51,6 +52,7 @@ public class Main {
         List<Content> contents = new ArrayList<>();
         List<Review> reviews = new ArrayList<>();
         List<Srs> srsStates = new ArrayList<>();
+        List<Event> events = new ArrayList<>();
         Map<String, String> tokens = new HashMap<>();
     }
 
@@ -60,7 +62,10 @@ public class Main {
     static final List<Content> contents = new ArrayList<>();
     static final List<Review> reviews = new ArrayList<>();
     static final List<Srs> srsStates = new ArrayList<>();
+    static final List<Event> events = new ArrayList<>();
     static final Map<String, String> tokens = new HashMap<>();
+    static final Map<String, List<Long>> authAttempts = new HashMap<>();
+    static final long startedAtMs = System.currentTimeMillis();
 
     static class GenerationAttempt {
         Content content;
@@ -84,6 +89,7 @@ public class Main {
         String method = ex.getRequestMethod();
         String path = ex.getRequestURI().getPath();
         try {
+            if (path.equals("/api/health") && method.equals("GET")) { health(ex); return; }
             if (path.equals("/api/auth/signup") && method.equals("POST")) { signup(ex); return; }
             if (path.equals("/api/auth/login") && method.equals("POST")) { login(ex); return; }
             if (path.equals("/api/auth/forgot-password") && method.equals("POST")) { send(ex,200,"{\"ok\":true}"); return; }
@@ -104,6 +110,10 @@ public class Main {
             if (path.equals("/api/session/next") && method.equals("GET")) { sessionNext(ex, userId); return; }
             if (path.equals("/api/review/summary") && method.equals("GET")) { reviewSummary(ex, userId); return; }
             if (path.equals("/api/stats") && method.equals("GET")) { stats(ex, userId); return; }
+            if (path.equals("/api/events") && method.equals("POST")) { createEvent(ex, userId); return; }
+            if (path.equals("/api/events") && method.equals("GET")) { listEvents(ex, userId); return; }
+            if (path.equals("/api/account/export") && method.equals("GET")) { accountExport(ex, userId); return; }
+            if (path.equals("/api/account") && method.equals("DELETE")) { deleteAccount(ex, userId); return; }
 
             if (path.matches("/api/cards/[^/]+") && method.equals("DELETE")) { deleteCard(ex, userId, path.split("/")[3]); return; }
             if (path.matches("/api/cards/[^/]+/retry") && method.equals("POST")) { retryCard(ex, userId, path.split("/")[3]); return; }
@@ -117,13 +127,19 @@ public class Main {
         }
     }
 
+    static void health(HttpExchange ex) throws IOException {
+        send(ex,200,String.format("{\"ok\":true,\"uptimeSeconds\":%d,\"users\":%d,\"cards\":%d}",(System.currentTimeMillis()-startedAtMs)/1000,users.size(),cards.size()));
+    }
+
     static void signup(HttpExchange ex) throws IOException {
         Map<String,String> b = parseJson(readBody(ex));
         String email=b.get("email"), pass=b.get("password");
-        if (!isValidEmail(email) || !isStrongPassword(pass)) { send(ex,400,"{\"error\":\"INVALID_INPUT\",\"message\":\"Provide valid email and password (min 8 chars, with letters and numbers).\"}"); return; }
-        for (User u: users) if (u.email.equalsIgnoreCase(email)) { send(ex,409,"{\"error\":\"EMAIL_EXISTS\"}"); return; }
+        if (isRateLimited(email)) { send(ex,429,"{\"error\":\"RATE_LIMITED\",\"message\":\"Too many auth attempts. Try again later.\"}"); return; }
+        if (!isValidEmail(email) || !isStrongPassword(pass)) { registerAuthAttempt(email); send(ex,400,"{\"error\":\"INVALID_INPUT\",\"message\":\"Provide valid email and password (min 8 chars, with letters and numbers).\"}"); return; }
+        for (User u: users) if (u.email.equalsIgnoreCase(email)) { registerAuthAttempt(email); send(ex,409,"{\"error\":\"EMAIL_EXISTS\"}"); return; }
         User u = new User(); u.id=uuid(); u.email=email.toLowerCase(Locale.ROOT); u.password=hashPassword(pass); u.plan="free"; u.createdAt=now(); users.add(u);
         String token=uuid(); tokens.put(token,u.id);
+        clearAuthAttempts(email);
         persistState();
         send(ex,200,"{\"token\":\""+token+"\"}");
     }
@@ -131,12 +147,15 @@ public class Main {
     static void login(HttpExchange ex) throws IOException {
         Map<String,String> b = parseJson(readBody(ex));
         String email=b.get("email"), pass=b.get("password");
-        if (!isValidEmail(email) || pass==null) { send(ex,400,"{\"error\":\"INVALID_INPUT\"}"); return; }
+        if (isRateLimited(email)) { send(ex,429,"{\"error\":\"RATE_LIMITED\",\"message\":\"Too many auth attempts. Try again later.\"}"); return; }
+        if (!isValidEmail(email) || pass==null) { registerAuthAttempt(email); send(ex,400,"{\"error\":\"INVALID_INPUT\"}"); return; }
         for (User u: users) if (u.email.equalsIgnoreCase(email) && verifyPassword(pass, u.password)) {
             String token=uuid(); tokens.put(token,u.id);
+            clearAuthAttempts(email);
             persistState();
             send(ex,200,"{\"token\":\""+token+"\"}"); return;
         }
+        registerAuthAttempt(email);
         send(ex,401,"{\"error\":\"INVALID_CREDENTIALS\"}");
     }
 
@@ -458,6 +477,58 @@ public class Main {
         ));
     }
 
+    static void createEvent(HttpExchange ex, String userId) throws IOException {
+        Map<String,String> b = parseJson(readBody(ex));
+        String name = b.getOrDefault("name", "").trim();
+        if (name.isEmpty() || name.length() > 80) { send(ex,400,"{\"error\":\"INVALID_EVENT\"}"); return; }
+        Event e = new Event();
+        e.id = uuid();
+        e.userId = userId;
+        e.name = name;
+        e.createdAt = now();
+        events.add(e);
+        persistState();
+        send(ex,200,"{\"ok\":true}");
+    }
+
+    static void listEvents(HttpExchange ex, String userId) throws IOException {
+        StringBuilder items = new StringBuilder();
+        int total = 0;
+        for (Event e : events) {
+            if (!e.userId.equals(userId)) continue;
+            if (items.length() > 0) items.append(',');
+            items.append(String.format("{\"eventId\":\"%s\",\"name\":\"%s\",\"createdAt\":\"%s\"}", e.id, esc(e.name), e.createdAt));
+            total++;
+        }
+        send(ex,200,String.format("{\"items\":[%s],\"total\":%d}", items, total));
+    }
+
+    static void accountExport(HttpExchange ex, String userId) throws IOException {
+        Profile p = profile(userId);
+        User u = userById(userId);
+        String profileJson = p == null ? "null" : String.format("{\"knownLanguage\":\"%s\",\"level\":\"%s\"}", p.knownLanguage, p.level);
+        int cardCount = 0;
+        int reviewCount = 0;
+        for (Card c : cards) if (c.userId.equals(userId)) cardCount++;
+        for (Review r : reviews) if (r.userId.equals(userId)) reviewCount++;
+        String plan = (u == null || u.plan == null || u.plan.isBlank()) ? "free" : u.plan;
+        send(ex,200,String.format("{\"email\":\"%s\",\"plan\":\"%s\",\"profile\":%s,\"cardCount\":%d,\"reviewCount\":%d}", esc(u == null ? "" : u.email), plan, profileJson, cardCount, reviewCount));
+    }
+
+    static void deleteAccount(HttpExchange ex, String userId) throws IOException {
+        tokens.entrySet().removeIf(e -> userId.equals(e.getValue()));
+        users.removeIf(u -> userId.equals(u.id));
+        profiles.removeIf(p -> userId.equals(p.userId));
+        List<String> ids = new ArrayList<>();
+        for (Card c : cards) if (userId.equals(c.userId)) ids.add(c.id);
+        for (String id : ids) removeCardData(userId, id);
+        reviews.removeIf(r -> userId.equals(r.userId));
+        srsStates.removeIf(s -> userId.equals(s.userId));
+        events.removeIf(e -> userId.equals(e.userId));
+        persistState();
+        send(ex,200,"{\"ok\":true}");
+    }
+
     static void stats(HttpExchange ex, String userId) throws IOException {
         int total=0, reviewsToday=0, known=0, unknown=0, dueToday=0;
         String day = LocalDate.now(ZoneOffset.UTC).toString();
@@ -674,6 +745,29 @@ public class Main {
         persistState();
     }
 
+    static boolean isRateLimited(String email) {
+        if (email == null) return false;
+        String key = email.toLowerCase(Locale.ROOT);
+        List<Long> attempts = authAttempts.getOrDefault(key, new ArrayList<>());
+        long now = System.currentTimeMillis();
+        attempts.removeIf(ts -> now - ts > 10 * 60 * 1000L);
+        authAttempts.put(key, attempts);
+        return attempts.size() >= 10;
+    }
+
+    static void registerAuthAttempt(String email) {
+        if (email == null) return;
+        String key = email.toLowerCase(Locale.ROOT);
+        List<Long> attempts = authAttempts.getOrDefault(key, new ArrayList<>());
+        attempts.add(System.currentTimeMillis());
+        authAttempts.put(key, attempts);
+    }
+
+    static void clearAuthAttempts(String email) {
+        if (email == null) return;
+        authAttempts.remove(email.toLowerCase(Locale.ROOT));
+    }
+
     static boolean isValidEmail(String email) {
         return email != null && EMAIL_RE.matcher(email).matches();
     }
@@ -726,6 +820,7 @@ public class Main {
             contents.clear(); contents.addAll(snapshot.contents);
             reviews.clear(); reviews.addAll(snapshot.reviews);
             srsStates.clear(); srsStates.addAll(snapshot.srsStates);
+            events.clear(); events.addAll(snapshot.events);
             tokens.clear(); tokens.putAll(snapshot.tokens);
         } catch (Exception ignored) {
             // First run or no persisted state yet.
@@ -743,6 +838,7 @@ public class Main {
             snapshot.contents.addAll(contents);
             snapshot.reviews.addAll(reviews);
             snapshot.srsStates.addAll(srsStates);
+            snapshot.events.addAll(events);
             snapshot.tokens.putAll(tokens);
             try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(DATA_FILE))) {
                 oos.writeObject(snapshot);
@@ -763,7 +859,7 @@ public class Main {
     static Card card(String userId, String id){ for(Card c:cards) if(c.userId.equals(userId)&&c.id.equals(id)) return c; return null; }
     static int dailyCount(String userId){ String d=LocalDate.now(ZoneOffset.UTC).toString(); int n=0; for(Card c:cards) if(c.userId.equals(userId)&&c.createdAt.startsWith(d)) n++; return n; }
 
-    static void cors(HttpExchange ex){ Headers h=ex.getResponseHeaders(); h.add("Content-Type","application/json"); h.add("Access-Control-Allow-Origin","*"); h.add("Access-Control-Allow-Headers","Content-Type, Authorization"); h.add("Access-Control-Allow-Methods","GET,POST,PATCH,DELETE,OPTIONS"); }
+    static void cors(HttpExchange ex){ Headers h=ex.getResponseHeaders(); h.add("Content-Type","application/json"); h.add("Access-Control-Allow-Origin","*"); h.add("Access-Control-Allow-Headers","Content-Type, Authorization"); h.add("Access-Control-Allow-Methods","GET,POST,PATCH,DELETE,OPTIONS"); h.add("X-Content-Type-Options","nosniff"); h.add("X-Frame-Options","DENY"); h.add("Referrer-Policy","no-referrer"); }
     static void send(HttpExchange ex, int code, String body) throws IOException { byte[] b=body.getBytes(StandardCharsets.UTF_8); ex.sendResponseHeaders(code,b.length); try(OutputStream os=ex.getResponseBody()){ os.write(b);} }
     static String readBody(HttpExchange ex) throws IOException { try(InputStream is=ex.getRequestBody()){ return new String(is.readAllBytes(), StandardCharsets.UTF_8);} }
     static String now(){ return Instant.now().toString(); }
