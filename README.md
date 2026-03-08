@@ -5,13 +5,26 @@ A full-stack web app for **strict active recall** vocabulary training.
 - **Frontend:** React + Vite (`client/`)
 - **Primary backend:** Java HTTP API (`backend-java/src/Main.java`)
 - **Reference backend:** Node/Express prototype (`src/`)
-- **Current product stage:** **v1 prototype / pre-commercial beta**
+- **Current product stage:** **v2 beta foundation (in progress)**
 
 ---
 
 ## 1) Current product status (what is implemented now)
 
 This repository already includes a working end-to-end experience for language learners (German as fixed learning language):
+
+
+### v2 upgrades implemented in this version
+
+- Safer auth foundation:
+  - password hashing via PBKDF2 (new signups)
+  - stronger signup validation (email format + stronger password rule)
+  - backward-compatible login verification for legacy plain-password records
+- Durable local persistence layer (beta):
+  - backend state now survives restarts using snapshot persistence at `backend-java/data/state.bin`
+- Generation validation tightened:
+  - strict key set check for generated payload (no missing/extra keys)
+  - sentence sanity guard for one-sentence target output
 
 ### Core learning flow (implemented)
 
@@ -63,8 +76,8 @@ This repository already includes a working end-to-end experience for language le
 
 ### What is still prototype-level
 
-- In-memory persistence (data resets on backend restart).
-- Basic auth storage (not production-grade security/session handling yet).
+- Persistence is now local snapshot-based (not yet production Postgres).
+- Auth is improved (hashed passwords) but still not full production security/session architecture yet.
 - No queue-based async generation workers.
 - Limited observability (metrics/tracing/alerts).
 - Test coverage is partial; not yet production confidence level.
@@ -169,13 +182,17 @@ Expected:
 
 Goal: move from prototype to stable beta.
 
-- Postgres persistence (replace in-memory stores).
+✅ Implemented now:
+- Safer auth foundation (password hashing + stronger validation).
+- Better generation validation baseline.
+- State persistence across restarts (snapshot file for beta environments).
+
+⏳ Still required to close full v2:
+- Postgres persistence (replace snapshot/in-memory runtime model).
 - Migration system + schema versioning.
-- Safer auth foundation (password hashing, stronger validation).
-- Better generation validation + clearer failure handling.
 - Expanded API + integration tests.
 
-**Exit criteria for v2:** data survives restarts, core flows stable in staging.
+**Exit criteria for v2:** Postgres-backed data survives restarts and core flows are stable in staging.
 
 ## v3 — Production architecture
 
@@ -224,4 +241,4 @@ Goal: launch and sell confidently.
 - Learning language is fixed to German (`de`) in current product direction.
 - Free plan daily generation limit is enforced in backend.
 - Premium plan removes daily card creation limit.
-- `db/schema.sql` remains the reference schema for persistence migration.
+- `db/schema.sql` remains the Postgres target schema for final v2 persistence completion.

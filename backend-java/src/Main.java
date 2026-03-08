@@ -5,6 +5,11 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.Serializable;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -12,6 +17,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.regex.Pattern;
+import java.security.SecureRandom;
+import java.security.spec.KeySpec;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.*;
@@ -25,13 +35,24 @@ public class Main {
     static final String OPENAI_API_KEY = System.getenv("OPENAI_API_KEY");
     static final String OPENAI_MODEL = System.getenv().getOrDefault("OPENAI_MODEL", "gpt-4o-mini");
     static final HttpClient HTTP = HttpClient.newHttpClient();
+    static final String DATA_FILE = "backend-java/data/state.bin";
+    static final Pattern EMAIL_RE = Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
 
-    static class User { String id, email, password, plan, createdAt; }
-    static class Profile { String userId, knownLanguage, level; }
-    static class Card { String id, userId, text, status, createdAt, groupName; }
-    static class Content { String cardId, knownLanguage, level, meaningTarget, meaningKnown, sentenceTarget, sentenceKnown, source, model, generationError, createdAt; }
-    static class Review { String userId, cardId, result, reviewedAt; }
-    static class Srs { String userId, cardId, dueAt; int intervalDays; String updatedAt; }
+    static class User implements Serializable { String id, email, password, plan, createdAt; }
+    static class Profile implements Serializable { String userId, knownLanguage, level; }
+    static class Card implements Serializable { String id, userId, text, status, createdAt, groupName; }
+    static class Content implements Serializable { String cardId, knownLanguage, level, meaningTarget, meaningKnown, sentenceTarget, sentenceKnown, source, model, generationError, createdAt; }
+    static class Review implements Serializable { String userId, cardId, result, reviewedAt; }
+    static class Srs implements Serializable { String userId, cardId, dueAt; int intervalDays; String updatedAt; }
+    static class StateSnapshot implements Serializable {
+        List<User> users = new ArrayList<>();
+        List<Profile> profiles = new ArrayList<>();
+        List<Card> cards = new ArrayList<>();
+        List<Content> contents = new ArrayList<>();
+        List<Review> reviews = new ArrayList<>();
+        List<Srs> srsStates = new ArrayList<>();
+        Map<String, String> tokens = new HashMap<>();
+    }
 
     static final List<User> users = new ArrayList<>();
     static final List<Profile> profiles = new ArrayList<>();
@@ -48,6 +69,7 @@ public class Main {
 
 
     public static void main(String[] args) throws Exception {
+        loadState();
         HttpServer server = HttpServer.create(new InetSocketAddress(3001), 0);
         server.createContext("/api", Main::handle);
         server.setExecutor(Executors.newCachedThreadPool());
@@ -98,19 +120,21 @@ public class Main {
     static void signup(HttpExchange ex) throws IOException {
         Map<String,String> b = parseJson(readBody(ex));
         String email=b.get("email"), pass=b.get("password");
-        if (email==null || pass==null || pass.length()<6 || !email.contains("@")) { send(ex,400,"{\"error\":\"INVALID_INPUT\"}"); return; }
-        for (User u: users) if (u.email.equals(email)) { send(ex,409,"{\"error\":\"EMAIL_EXISTS\"}"); return; }
-        User u = new User(); u.id=uuid(); u.email=email; u.password=pass; u.plan="free"; u.createdAt=now(); users.add(u);
+        if (!isValidEmail(email) || !isStrongPassword(pass)) { send(ex,400,"{\"error\":\"INVALID_INPUT\",\"message\":\"Provide valid email and password (min 8 chars, with letters and numbers).\"}"); return; }
+        for (User u: users) if (u.email.equalsIgnoreCase(email)) { send(ex,409,"{\"error\":\"EMAIL_EXISTS\"}"); return; }
+        User u = new User(); u.id=uuid(); u.email=email.toLowerCase(Locale.ROOT); u.password=hashPassword(pass); u.plan="free"; u.createdAt=now(); users.add(u);
         String token=uuid(); tokens.put(token,u.id);
+        persistState();
         send(ex,200,"{\"token\":\""+token+"\"}");
     }
 
     static void login(HttpExchange ex) throws IOException {
         Map<String,String> b = parseJson(readBody(ex));
         String email=b.get("email"), pass=b.get("password");
-        if (email==null || pass==null) { send(ex,400,"{\"error\":\"INVALID_INPUT\"}"); return; }
-        for (User u: users) if (u.email.equals(email) && u.password.equals(pass)) {
+        if (!isValidEmail(email) || pass==null) { send(ex,400,"{\"error\":\"INVALID_INPUT\"}"); return; }
+        for (User u: users) if (u.email.equalsIgnoreCase(email) && verifyPassword(pass, u.password)) {
             String token=uuid(); tokens.put(token,u.id);
+            persistState();
             send(ex,200,"{\"token\":\""+token+"\"}"); return;
         }
         send(ex,401,"{\"error\":\"INVALID_CREDENTIALS\"}");
@@ -130,6 +154,7 @@ public class Main {
         if (!KNOWN_LANGUAGES.contains(known) || !LEVELS.contains(level)) { send(ex,400,"{\"error\":\"INVALID_INPUT\"}"); return; }
         Profile p=profile(userId); if (p==null){ p=new Profile(); p.userId=userId; profiles.add(p); }
         p.knownLanguage=known; p.level=level;
+        persistState();
         User u = userById(userId);
         String plan = (u == null || u.plan == null || u.plan.isBlank()) ? "free" : u.plan;
         send(ex,200,String.format("{\"knownLanguage\":\"%s\",\"targetLanguage\":\"%s\",\"level\":\"%s\",\"plan\":\"%s\"}", known,LEARNING_LANGUAGE,level,plan));
@@ -152,6 +177,7 @@ public class Main {
         User u = userById(userId);
         if (u == null) { send(ex,404,"{\"error\":\"NOT_FOUND\"}"); return; }
         u.plan = plan;
+        persistState();
         send(ex,200,String.format("{\"plan\":\"%s\"}", plan));
     }
 
@@ -205,6 +231,7 @@ public class Main {
 
         Srs s=new Srs(); s.userId=userId; s.cardId=c.id; s.intervalDays=1; s.dueAt=now(); s.updatedAt=now(); srsStates.add(s);
         Content generated = generate(c,p);
+        persistState();
         send(ex,200,"{\"cardId\":\""+c.id+"\",\"status\":\""+c.status+"\",\"groupName\":\""+esc(groupName)+"\",\"generationSource\":\""+esc(generated.source)+"\",\"generationModel\":\""+esc(generated.model)+"\",\"generationError\":\""+esc(generated.generationError == null ? "" : generated.generationError)+"\"}");
     }
 
@@ -256,6 +283,7 @@ public class Main {
 
     static void deleteCard(HttpExchange ex, String userId, String id) throws IOException {
         removeCardData(userId, id);
+        persistState();
         send(ex,200,"{\"ok\":true}");
     }
 
@@ -273,6 +301,7 @@ public class Main {
         }
 
         for (String id : cardIds) removeCardData(userId, id);
+        persistState();
         send(ex,200,String.format("{\"ok\":true,\"deleted\":%d}", cardIds.size()));
     }
 
@@ -290,6 +319,7 @@ public class Main {
             moved++;
         }
 
+        persistState();
         send(ex,200,String.format("{\"ok\":true,\"movedToDefault\":%d}", moved));
     }
 
@@ -305,6 +335,7 @@ public class Main {
         Profile p=profile(userId); if(p==null){ send(ex,400,"{\"error\":\"PROFILE_REQUIRED\"}"); return; }
         contents.removeIf(x -> x.cardId.equals(id) && x.knownLanguage.equals(p.knownLanguage) && x.level.equals(p.level));
         c.status="generating"; Content generated = generate(c,p);
+        persistState();
         send(ex,200,"{\"status\":\""+c.status+"\",\"generationSource\":\""+esc(generated.source)+"\",\"generationModel\":\""+esc(generated.model)+"\",\"generationError\":\""+esc(generated.generationError == null ? "" : generated.generationError)+"\"}");
     }
 
@@ -569,13 +600,14 @@ public class Main {
     static boolean isValidGeneratedContent(Map<String, String> m, String text) {
         if (m == null) return false;
         Set<String> req = Set.of("meaningTarget", "meaningKnown", "sentenceTarget", "sentenceKnown");
-        if (!m.keySet().containsAll(req)) return false;
+        if (!m.keySet().equals(req)) return false;
         for (String k : req) {
             String v = m.get(k);
             if (v == null || v.trim().isEmpty()) return false;
         }
         String sentence = m.get("sentenceTarget").trim();
         if (!sentence.toLowerCase().contains(text.toLowerCase())) return false;
+        if (sentence.split("[.!?]").length > 2) return false;
         return true;
     }
 
@@ -638,6 +670,85 @@ public class Main {
         for(Srs s:srsStates) if(s.userId.equals(userId)&&s.cardId.equals(cardId)){
             if("known".equals(result)) s.intervalDays=Math.max(1,Math.round(s.intervalDays*2)); else s.intervalDays=1;
             s.dueAt=Instant.now().plusSeconds(86400L*s.intervalDays).toString(); s.updatedAt=now();
+        }
+        persistState();
+    }
+
+    static boolean isValidEmail(String email) {
+        return email != null && EMAIL_RE.matcher(email).matches();
+    }
+
+    static boolean isStrongPassword(String password) {
+        if (password == null || password.length() < 8) return false;
+        boolean hasLetter = false;
+        boolean hasDigit = false;
+        for (char c : password.toCharArray()) {
+            if (Character.isLetter(c)) hasLetter = true;
+            if (Character.isDigit(c)) hasDigit = true;
+        }
+        return hasLetter && hasDigit;
+    }
+
+    static String hashPassword(String password) {
+        try {
+            byte[] salt = new byte[16];
+            new SecureRandom().nextBytes(salt);
+            KeySpec spec = new PBEKeySpec(password.toCharArray(), salt, 65536, 256);
+            byte[] hash = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded();
+            return "pbkdf2$65536$" + Base64.getEncoder().encodeToString(salt) + "$" + Base64.getEncoder().encodeToString(hash);
+        } catch (Exception e) {
+            throw new RuntimeException("hash_failure");
+        }
+    }
+
+    static boolean verifyPassword(String raw, String stored) {
+        try {
+            if (stored == null) return false;
+            if (!stored.startsWith("pbkdf2$")) return stored.equals(raw);
+            String[] parts = stored.split("\\$");
+            int iterations = Integer.parseInt(parts[1]);
+            byte[] salt = Base64.getDecoder().decode(parts[2]);
+            byte[] expected = Base64.getDecoder().decode(parts[3]);
+            KeySpec spec = new PBEKeySpec(raw.toCharArray(), salt, iterations, expected.length * 8);
+            byte[] actual = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded();
+            return Arrays.equals(actual, expected);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    static void loadState() {
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(DATA_FILE))) {
+            StateSnapshot snapshot = (StateSnapshot) ois.readObject();
+            users.clear(); users.addAll(snapshot.users);
+            profiles.clear(); profiles.addAll(snapshot.profiles);
+            cards.clear(); cards.addAll(snapshot.cards);
+            contents.clear(); contents.addAll(snapshot.contents);
+            reviews.clear(); reviews.addAll(snapshot.reviews);
+            srsStates.clear(); srsStates.addAll(snapshot.srsStates);
+            tokens.clear(); tokens.putAll(snapshot.tokens);
+        } catch (Exception ignored) {
+            // First run or no persisted state yet.
+        }
+    }
+
+    static synchronized void persistState() {
+        try {
+            java.io.File dir = new java.io.File("backend-java/data");
+            if (!dir.exists()) dir.mkdirs();
+            StateSnapshot snapshot = new StateSnapshot();
+            snapshot.users.addAll(users);
+            snapshot.profiles.addAll(profiles);
+            snapshot.cards.addAll(cards);
+            snapshot.contents.addAll(contents);
+            snapshot.reviews.addAll(reviews);
+            snapshot.srsStates.addAll(srsStates);
+            snapshot.tokens.putAll(tokens);
+            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(DATA_FILE))) {
+                oos.writeObject(snapshot);
+            }
+        } catch (Exception ignored) {
+            // Do not break request flow on persistence error in v2 beta.
         }
     }
 
