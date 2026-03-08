@@ -26,7 +26,7 @@ public class Main {
     static final String OPENAI_MODEL = System.getenv().getOrDefault("OPENAI_MODEL", "gpt-4o-mini");
     static final HttpClient HTTP = HttpClient.newHttpClient();
 
-    static class User { String id, email, password, createdAt; }
+    static class User { String id, email, password, plan, createdAt; }
     static class Profile { String userId, knownLanguage, level; }
     static class Card { String id, userId, text, status, createdAt, groupName; }
     static class Content { String cardId, knownLanguage, level, meaningTarget, meaningKnown, sentenceTarget, sentenceKnown, source, model, generationError, createdAt; }
@@ -71,6 +71,8 @@ public class Main {
 
             if (path.equals("/api/profile") && method.equals("GET")) { getProfile(ex, userId); return; }
             if (path.equals("/api/profile") && method.equals("PATCH")) { patchProfile(ex, userId); return; }
+            if (path.equals("/api/subscription") && method.equals("GET")) { getSubscription(ex, userId); return; }
+            if (path.equals("/api/subscription") && method.equals("PATCH")) { patchSubscription(ex, userId); return; }
 
             if (path.equals("/api/groups") && method.equals("GET")) { groups(ex, userId); return; }
             if (path.matches("/api/groups/[^/]+/cards") && method.equals("DELETE")) { deleteGroupCards(ex, userId, urlDecode(path.split("/")[3])); return; }
@@ -98,7 +100,7 @@ public class Main {
         String email=b.get("email"), pass=b.get("password");
         if (email==null || pass==null || pass.length()<6 || !email.contains("@")) { send(ex,400,"{\"error\":\"INVALID_INPUT\"}"); return; }
         for (User u: users) if (u.email.equals(email)) { send(ex,409,"{\"error\":\"EMAIL_EXISTS\"}"); return; }
-        User u = new User(); u.id=uuid(); u.email=email; u.password=pass; u.createdAt=now(); users.add(u);
+        User u = new User(); u.id=uuid(); u.email=email; u.password=pass; u.plan="free"; u.createdAt=now(); users.add(u);
         String token=uuid(); tokens.put(token,u.id);
         send(ex,200,"{\"token\":\""+token+"\"}");
     }
@@ -117,7 +119,9 @@ public class Main {
     static void getProfile(HttpExchange ex, String userId) throws IOException {
         Profile p = profile(userId);
         if (p==null) { send(ex,404,"{\"error\":\"PROFILE_NOT_FOUND\"}"); return; }
-        send(ex,200,String.format("{\"knownLanguage\":\"%s\",\"targetLanguage\":\"%s\",\"level\":\"%s\"}", p.knownLanguage,LEARNING_LANGUAGE,p.level));
+        User u = userById(userId);
+        String plan = (u == null || u.plan == null || u.plan.isBlank()) ? "free" : u.plan;
+        send(ex,200,String.format("{\"knownLanguage\":\"%s\",\"targetLanguage\":\"%s\",\"level\":\"%s\",\"plan\":\"%s\"}", p.knownLanguage,LEARNING_LANGUAGE,p.level,plan));
     }
 
     static void patchProfile(HttpExchange ex, String userId) throws IOException {
@@ -126,7 +130,35 @@ public class Main {
         if (!KNOWN_LANGUAGES.contains(known) || !LEVELS.contains(level)) { send(ex,400,"{\"error\":\"INVALID_INPUT\"}"); return; }
         Profile p=profile(userId); if (p==null){ p=new Profile(); p.userId=userId; profiles.add(p); }
         p.knownLanguage=known; p.level=level;
-        send(ex,200,String.format("{\"knownLanguage\":\"%s\",\"targetLanguage\":\"%s\",\"level\":\"%s\"}", known,LEARNING_LANGUAGE,level));
+        User u = userById(userId);
+        String plan = (u == null || u.plan == null || u.plan.isBlank()) ? "free" : u.plan;
+        send(ex,200,String.format("{\"knownLanguage\":\"%s\",\"targetLanguage\":\"%s\",\"level\":\"%s\",\"plan\":\"%s\"}", known,LEARNING_LANGUAGE,level,plan));
+    }
+
+
+    static void getSubscription(HttpExchange ex, String userId) throws IOException {
+        User u = userById(userId);
+        String plan = (u == null || u.plan == null || u.plan.isBlank()) ? "free" : u.plan;
+        send(ex,200,String.format("{\"plan\":\"%s\"}", plan));
+    }
+
+    static void patchSubscription(HttpExchange ex, String userId) throws IOException {
+        Map<String,String> b = parseJson(readBody(ex));
+        String plan = b.get("plan");
+        if (plan == null || (!"free".equals(plan) && !"premium".equals(plan))) {
+            send(ex,400,"{\"error\":\"INVALID_PLAN\"}");
+            return;
+        }
+        User u = userById(userId);
+        if (u == null) { send(ex,404,"{\"error\":\"NOT_FOUND\"}"); return; }
+        u.plan = plan;
+        send(ex,200,String.format("{\"plan\":\"%s\"}", plan));
+    }
+
+    static boolean dailyLimitReached(String userId) {
+        User u = userById(userId);
+        boolean premium = u != null && "premium".equals(u.plan);
+        return !premium && dailyCount(userId) >= 10;
     }
 
     static void groups(HttpExchange ex, String userId) throws IOException {
@@ -149,7 +181,7 @@ public class Main {
         if (text.isEmpty() || text.length()>80){ send(ex,400,"{\"error\":\"INVALID_TEXT\"}"); return; }
 
         Profile p=profile(userId); if (p==null){ send(ex,400,"{\"error\":\"PROFILE_REQUIRED\"}"); return; }
-        if (dailyCount(userId)>=10){ send(ex,429,"{\"error\":\"DAILY_LIMIT_REACHED\",\"message\":\"Daily word generation limit reached.\"}"); return; }
+        if (dailyLimitReached(userId)){ send(ex,429,"{\"error\":\"DAILY_LIMIT_REACHED\",\"message\":\"Daily word generation limit reached for free plan. Upgrade to premium for unlimited words.\"}"); return; }
 
         String groupMode = b.getOrDefault("groupMode", "default");
         String groupName = resolveGroup(userId, groupMode, b.get("groupName"));
@@ -615,6 +647,7 @@ public class Main {
         return tokens.get(h.substring(7));
     }
 
+    static User userById(String userId){ for(User u:users) if(u.id.equals(userId)) return u; return null; }
     static Profile profile(String userId){ for(Profile p:profiles) if(p.userId.equals(userId)) return p; return null; }
     static Card card(String userId, String id){ for(Card c:cards) if(c.userId.equals(userId)&&c.id.equals(id)) return c; return null; }
     static int dailyCount(String userId){ String d=LocalDate.now(ZoneOffset.UTC).toString(); int n=0; for(Card c:cards) if(c.userId.equals(userId)&&c.createdAt.startsWith(d)) n++; return n; }

@@ -137,7 +137,7 @@ function AuthPage() {
 }
 
 function ProfileForm({ onboarding = false }) {
-  const [profile, setProfile] = useState({ knownLanguage: 'en', level: 'A1' });
+  const [profile, setProfile] = useState({ knownLanguage: 'en', level: 'A1', plan: 'free' });
   const [loadingProfile, setLoadingProfile] = useState(true);
   const nav = useNavigate();
 
@@ -148,7 +148,8 @@ function ProfileForm({ onboarding = false }) {
         if (!active) return;
         setProfile({
           knownLanguage: data.knownLanguage,
-          level: data.level
+          level: data.level,
+          plan: data.plan || 'free'
         });
       })
       .catch(() => {})
@@ -162,8 +163,15 @@ function ProfileForm({ onboarding = false }) {
   }, []);
 
   const save = async () => {
-    await request('/profile', { method: 'PATCH', body: JSON.stringify(profile) });
+    const { knownLanguage, level } = profile;
+    const updated = await request('/profile', { method: 'PATCH', body: JSON.stringify({ knownLanguage, level }) });
+    setProfile((p) => ({ ...p, plan: updated.plan || p.plan }));
     nav('/dashboard');
+  };
+
+  const setPlan = async (plan) => {
+    const data = await request('/subscription', { method: 'PATCH', body: JSON.stringify({ plan }) });
+    setProfile((p) => ({ ...p, plan: data.plan }));
   };
 
   if (loadingProfile) {
@@ -199,6 +207,13 @@ function ProfileForm({ onboarding = false }) {
         </div>
 
         <p className="help">Learning language is fixed to German.</p>
+        <div className="plan-box">
+          <p className="plan-label">Plan: <strong>{profile.plan === 'premium' ? 'Premium (unlimited daily words)' : 'Free (10 words/day)'}</strong></p>
+          <div className="row left">
+            <button type="button" className={`btn ${profile.plan === 'free' ? 'ghost' : ''}`} onClick={() => setPlan('free')}>Use Free</button>
+            <button type="button" className={`btn primary ${profile.plan === 'premium' ? 'primary' : ''}`} onClick={() => setPlan('premium')}>Switch to Premium</button>
+          </div>
+        </div>
         <button className="btn primary profile-save-btn" onClick={save}>Save profile</button>
       </Surface>
     </Layout>

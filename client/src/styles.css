@@ -795,3 +795,17 @@ input:focus, select:focus {
   from { transform: translateY(18px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
+
+.plan-box {
+  margin-top: 12px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  padding: 12px;
+}
+
+.plan-label {
+  margin: 0 0 8px;
+  color: #334155;
+}

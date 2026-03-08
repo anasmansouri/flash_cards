@@ -88,6 +88,8 @@ npm run dev
 - `POST /api/auth/forgot-password`
 - `GET /api/profile`
 - `PATCH /api/profile` (set your language + German level; target language is always German)
+- `GET /api/subscription`
+- `PATCH /api/subscription` (`{"plan":"free"|"premium"}`)
 - `POST /api/cards`
 - `GET /api/cards`
 - `DELETE /api/cards/{id}`
@@ -104,11 +106,12 @@ npm run dev
 ## Notes
 
 - Learning language is fixed to **German (`de`)** across the app.
-- Settings/onboarding only control your language (`knownLanguage`) and your German CEFR level (`A1`-`C2`).
+- Settings/onboarding control your language (`knownLanguage`), German CEFR level (`A1`-`C2`), and plan (`free` vs `premium`).
 - Backend storage is in-memory for v1 scaffold.
 - `db/schema.sql` still contains the target Postgres schema design.
 - Card generation remains server-side and enforces strict no-reveal flow (`/session/next` returns only `cardId` + `text`).
 - If `OPENAI_API_KEY` is set, backend generation uses OpenAI Chat Completions; otherwise it falls back to demo generation content.
+- Free plan limit: **10 words/day**. Premium plan: **unlimited words/day**.
 
 
 ## Grouping support
